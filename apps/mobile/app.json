@@ -1,0 +1,109 @@
+{
+  "expo": {
+    "name": "FinZen",
+    "slug": "finzen",
+    "version": "0.2.0",
+    "scheme": "finzen",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.finzen.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#7C3AED",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.DETECT_SCREEN_CAPTURE" 
+      ],
+      
+      "versionCode": 3,
+      "allowBackup": false,
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.USE_FINGERPRINT",
+        "com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "FinZen usa tu huella o rostro para proteger tus finanzas."
+        }
+      ],
+      "expo-sharing",
+      "expo-font",
+      "expo-document-picker",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26,
+            "usesCleartextTraffic": false
+          }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "FinZen usa la cámara para leer tus recibos.",
+          "photosPermission": "FinZen lee recibos desde tus fotos."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#7C3AED"
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "FinZen usa el micrófono para dictar gastos.",
+          "speechRecognitionPermission": "FinZen reconoce tu voz para dictar gastos."
+        }
+      ],
+      "expo-updates",
+      [
+        "expo-dev-client",
+        {
+          "addGeneratedScheme": false
+        }
+      ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7487f92e-2d04-416b-b416-89c62289972d"
+      }
+    },
+    "owner": "edisonjg",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/7487f92e-2d04-416b-b416-89c62289972d",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    }
+  }
+}

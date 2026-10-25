@@ -1,0 +1,18 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!--
+      Servicio que Android enlaza cuando el usuario concede "Acceso a notificaciones".
+      No necesita ningún permiso en tiempo de ejecución: el acceso lo concede el propio
+      usuario a mano en los ajustes del sistema.
+    -->
+    <service
+      android:name="expo.modules.finzennotifications.FinzenNotificationListener"
+      android:label="FinZen"
+      android:exported="true"
+      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+      </intent-filter>
+    </service>
+  </application>
+</manifest>

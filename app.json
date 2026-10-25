@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "7487f92e-2d04-416b-b416-89c62289972d"
+      }
+    },
+    "android": {
+      "package": "com.edisonjg.finzen"
+    }
+  }
+}

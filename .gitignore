@@ -1,0 +1,33 @@
+# Dependencias
+node_modules/
+
+# Secretos y configuración local (NUNCA subir claves de Supabase / Gemini)
+.env
+.env.*
+!.env.example
+config.local.*
+*.keystore
+*.jks
+google-services.json
+
+# Bases de datos locales (contienen datos financieros)
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Builds
+dist/
+build/
+.expo/
+/apps/mobile/android/
+/apps/mobile/ios/
+apps/desktop/src-tauri/target/
+coverage/
+
+# Sistema
+.DS_Store
+Thumbs.db
+*.log
