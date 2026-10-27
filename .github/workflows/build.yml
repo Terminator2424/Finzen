@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: # Permite ejecutarlo manualmente desde GitHub
+  workflow_dispatch:
 
 jobs:
   build:
@@ -31,17 +31,17 @@ jobs:
 
       - name: 5. Generar la carpeta nativa de Android (Prebuild)
         working-directory: ./apps/mobile
-        run: npx expo prebuild --platform android
+        run: npx expo prebuild --platform android --clean --no-install
 
-      - name: 6. Compilar el APK con Gradle
+      - name: 6. Compilar el APK (Debug) con Gradle
         working-directory: ./apps/mobile/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleDebug
 
       - name: 7. Guardar el APK como descargable
         uses: actions/upload-artifact@v4
         with:
           name: FinZen-APK
-          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
