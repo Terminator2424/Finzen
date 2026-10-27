@@ -5,8 +5,6 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '../theme/ThemeProvider';
 import { groupDigits } from '../utils/format';
 
-/** Componentes base. Todos leen los colores del tema: ninguna pantalla usa colores fijos. */
-
 export function Card({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
   const { colors } = useTheme();
   return (
@@ -15,17 +13,17 @@ export function Card({ children, style }: { children: React.ReactNode; style?: V
 }
 
 export function AppText({
-  children, variant = 'body', color, style,
+  children, variant = 'body', color, style, ...props
 }: {
   children: React.ReactNode;
   variant?: 'title' | 'subtitle' | 'body' | 'caption' | 'big';
   color?: string;
   style?: object;
-}) {
+} & React.ComponentProps<typeof Text>) {
   const { colors } = useTheme();
   const base = { title: 26, subtitle: 18, body: 15, caption: 12, big: 34 }[variant];
   const weight = variant === 'body' || variant === 'caption' ? '400' : '700';
-  return <Text style={[{ fontSize: base, fontWeight: weight, color: color ?? colors.text }, style]}>{children}</Text>;
+  return <Text {...props} style={[{ fontSize: base, fontWeight: weight, color: color ?? colors.text }, style]}>{children}</Text>;
 }
 
 export function Button({
@@ -74,7 +72,6 @@ export function Field({ label, ...props }: TextInputProps & { label: string }) {
       <AppText variant="caption" color={colors.textSecondary}>{label}</AppText>
       <TextInput
         placeholderTextColor={colors.textSecondary}
-        // Campos secretos: sin autocorrección ni sugerencias del teclado (que podrían aprender la clave).
         {...(props.secureTextEntry ? { autoCorrect: false, autoComplete: 'off', importantForAutofill: 'no', spellCheck: false } : {})}
         {...props}
         style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
@@ -83,7 +80,6 @@ export function Field({ label, ...props }: TextInputProps & { label: string }) {
   );
 }
 
-/** Campo de dinero: muestra "1.250.000" mientras se escribe y entrega el texto crudo con puntos. */
 export function MoneyField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <Field
@@ -103,7 +99,6 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
 });
 
-/** Encabezado de pantallas secundarias, con botón de volver. */
 export function ScreenHeader({ title, right }: { title: string; right?: React.ReactNode }) {
   const { colors } = useTheme();
   const router = useRouter();
@@ -118,13 +113,17 @@ export function ScreenHeader({ title, right }: { title: string; right?: React.Re
   );
 }
 
-/** Fila "etiqueta ........ valor". */
+// ARREGLO VISUAL: Aquí está la magia para que el texto no se salga
 export function InfoRow({ label, value, color }: { label: string; value: string; color?: string }) {
   const { colors } = useTheme();
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-      <AppText color={colors.textSecondary}>{label}</AppText>
-      <AppText color={color}>{value}</AppText>
+      <AppText color={colors.textSecondary} style={{ flexShrink: 1 }} numberOfLines={1} ellipsizeMode="tail">
+        {label}
+      </AppText>
+      <AppText color={color} style={{ flexShrink: 0 }}>
+        {value}
+      </AppText>
     </View>
   );
 }

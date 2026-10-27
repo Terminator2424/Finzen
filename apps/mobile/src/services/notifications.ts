@@ -115,7 +115,8 @@ export const SIMULATED_NOTIFICATIONS: { label: string; packageName: string; text
   { label: 'Nequi · OTP (debe descartarse)', packageName: 'com.nequi.MobileApp', text: 'Tu código de verificación es 482913. No lo compartas.' },
   { label: 'WhatsApp (debe ignorarse)', packageName: 'com.whatsapp', text: 'Hola, ¿cómo estás? $50.000' },
 ];
-// ───────────── NUEVO: Bandeja de notificaciones no interpretadas ─────────────
+
+// ───────────── Bandeja de notificaciones no interpretadas ─────────────
 
 export interface DraftNotification {
   id: string;
@@ -132,8 +133,14 @@ export async function listDrafts(): Promise<DraftNotification[]> {
   );
 }
 
-/** Elimina un borrador de la bandeja (ya sea porque se procesó o porque se descartó). */
+/** Elimina un borrador de la bandeja. */
 export async function deleteDraft(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM notifications_log WHERE id=?', [id]);
+}
+
+/** Borra TODOS los borradores de un solo golpe. */
+export async function deleteAllDrafts(): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("DELETE FROM notifications_log WHERE outcome='discarded_unparsed'");
 }

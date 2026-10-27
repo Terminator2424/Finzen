@@ -121,7 +121,6 @@ async function init() {
   const db = await open();
   await db.execAsync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON;');
 
-  // Adaptador entre expo-sqlite y el runner de migraciones compartido.
   const exec: SqlExecutor = {
     exec: (sql) => db.execAsync(sql),
     getUserVersion: async () =>
@@ -131,11 +130,8 @@ async function init() {
   await runMigrations(exec);
 
   await db.execAsync(seedCategoriesSql(Date.now()));
-  for (const s of DEFAULT_SOURCES) {
-    await db.runAsync(
-      'INSERT OR IGNORE INTO notification_sources (id,label,kind,package_pattern,enabled,user_added) VALUES (?,?,?,?,1,0)',
-      [s.id, s.label, s.kind, s.packagePattern],
-    );
-  }
+  
+  // ❌ SE ELIMINÓ EL BUCLE QUE INSERTABA LAS APPS POR DEFECTO
+
   return db;
 }

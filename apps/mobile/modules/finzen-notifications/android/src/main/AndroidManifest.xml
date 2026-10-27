@@ -1,10 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Permisos necesarios para el Foreground Service -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
   <application>
-    <!--
-      Servicio que Android enlaza cuando el usuario concede "Acceso a notificaciones".
-      No necesita ningún permiso en tiempo de ejecución: el acceso lo concede el propio
-      usuario a mano en los ajustes del sistema.
-    -->
+    <!-- Listener Original -->
     <service
       android:name="expo.modules.finzennotifications.FinzenNotificationListener"
       android:label="FinZen"
@@ -14,5 +14,11 @@
         <action android:name="android.service.notification.NotificationListenerService" />
       </intent-filter>
     </service>
+
+    <!-- Nuevo Foreground Service -->
+    <service
+      android:name="expo.modules.finzennotifications.FinzenForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="dataSync" />
   </application>
 </manifest>

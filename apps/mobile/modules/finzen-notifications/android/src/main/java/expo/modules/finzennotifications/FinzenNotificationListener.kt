@@ -1,20 +1,36 @@
 package expo.modules.finzennotifications
 
+import android.content.Intent
+import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 
-/**
- * Servicio de lectura de notificaciones. Toda la lógica vive en [NotificationStore];
- * aquí solo se recibe el evento y se protege contra cualquier excepción para que un
- * error nunca tumbe el servicio.
- */
 class FinzenNotificationListener : NotificationListenerService() {
+
+  override fun onListenerConnected() {
+    super.onListenerConnected()
+    startForegroundService()
+  }
+
+  private fun startForegroundService() {
+    try {
+      val intent = Intent(this, FinzenForegroundService::class.java)
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        startForegroundService(intent)
+      } else {
+        startService(intent)
+      }
+    } catch (_: Exception) {
+      // Si falla, no rompemos el flujo
+    }
+  }
+
   override fun onNotificationPosted(sbn: StatusBarNotification?) {
     if (sbn == null) return
     try {
       NotificationStore.handle(applicationContext, sbn)
     } catch (_: Throwable) {
-      // Silencioso a propósito: no se registra el contenido de ninguna notificación.
+      // Silencioso
     }
   }
 }

@@ -1,0 +1,47 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Permite ejecutarlo manualmente desde GitHub
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Descargar el código (Checkout)
+        uses: actions/checkout@v4
+
+      - name: 2. Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: 3. Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 4. Instalar dependencias
+        run: npm install
+
+      - name: 5. Generar la carpeta nativa de Android (Prebuild)
+        working-directory: ./apps/mobile
+        run: npx expo prebuild --platform android
+
+      - name: 6. Compilar el APK con Gradle
+        working-directory: ./apps/mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      - name: 7. Guardar el APK como descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: FinZen-APK
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 7

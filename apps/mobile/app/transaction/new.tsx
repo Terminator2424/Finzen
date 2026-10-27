@@ -11,11 +11,11 @@ import { listCards } from '../../src/services/debts';
 import { listAccounts } from '../../src/services/repo';
 import {
   createInstallmentPurchase, createTransaction, updateTransaction, listCategories, suggestCategory, getTransaction, type TxType,
-  PaymentMethod,
+  type PaymentMethod,
 } from '../../src/services/transactions';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { formatCOP, groupDigits, parseDigits } from '../../src/utils/format';
-import { deleteDraft } from '../../src/services/notifications'; // <-- NUEVO
+import { deleteDraft } from '../../src/services/notifications';
 
 type Pay = { kind: 'account'; id: string } | { kind: 'card'; id: string } | { kind: 'bnpl' } | null;
 
@@ -23,16 +23,14 @@ export default function NewTransaction() {
   const { colors } = useTheme();
   const router = useRouter();
   
-  // Paso B: Añadimos draftId a los parámetros
   const rawParams = useLocalSearchParams<{ amount?: string; merchant?: string; date?: string; id?: string; draftId?: string }>();
   
-  // Validaciones básicas
   const params = {
     amount: /^\d{1,13}$/.test(String(rawParams.amount ?? '')) ? String(rawParams.amount) : undefined,
     merchant: rawParams.merchant ? String(rawParams.merchant).replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 60) : undefined,
     date: Number.isFinite(Number(rawParams.date)) && Number(rawParams.date) > 0 && Number(rawParams.date) < 4.1e12 ? String(rawParams.date) : undefined,
     id: rawParams.id ? String(rawParams.id) : undefined,
-    draftId: rawParams.draftId ? String(rawParams.draftId) : undefined, // <-- NUEVO
+    draftId: rawParams.draftId ? String(rawParams.draftId) : undefined,
   };
 
   const isEditing = !!params.id;
@@ -50,7 +48,6 @@ export default function NewTransaction() {
   const [inInstallments, setInInstallments] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Cargar datos si estamos editando
   useEffect(() => {
     if (!isEditing) return;
     getTransaction(params.id!).then(tx => {
@@ -87,12 +84,10 @@ export default function NewTransaction() {
     occurredAt: params.date ? Number(params.date) : undefined,
   });
 
-  // Paso C: Función save corregida
   const save = async () => {
     if (!value || saving) return;
     setSaving(true);
     try {
-      // 1. Arreglamos el tipo 'any'
       let paymentMethod: PaymentMethod = 'cash';
       let accountId: string | null = null;
       let cardId: string | null = null;
@@ -101,20 +96,14 @@ export default function NewTransaction() {
       else if (pay?.kind === 'account') { paymentMethod = 'debit'; accountId = pay.id; }
 
       if (isEditing) {
-        // MODO EDICIÓN
         const ok = await updateTransaction(params.id!, { ...baseTx(), paymentMethod, accountId, cardId });
-        
-        // 2. Arreglamos el atasco si falla
         if (!ok) {
           Alert.alert('No se puede', 'Esta compra pertenece a un plan de cuotas. Elimínala desde "Deudas" si necesitas cambiarla.');
-          router.back(); // <-- Nos aseguramos de salir
-          return;        // <-- Cortamos la ejecución aquí
+          router.back();
+          return;
         }
       } else {
-        // MODO CREACIÓN
         await createTransaction({ ...baseTx(), paymentMethod, accountId, cardId });
-        
-        // 3. Arreglamos el borrado del Draft
         if (params.draftId) {
           await deleteDraft(params.draftId);
         }
@@ -126,7 +115,7 @@ export default function NewTransaction() {
   };
 
   const saveInstallments = async (c: { installments: number; mode: any; firstDueDate: string }) => {
-    if (!value || saving || !pay || isEditing) return; // No se permiten cuotas en edición directa
+    if (!value || saving || !pay || isEditing) return;
     setSaving(true);
     try {
       const label = baseTx().merchant ?? 'Compra a cuotas';
@@ -138,6 +127,9 @@ export default function NewTransaction() {
           installments: c.installments, mode: c.mode, firstDueDate: c.firstDueDate,
         },
       );
+      if (params.draftId) {
+        await deleteDraft(params.draftId);
+      }
       router.back();
     } finally { setSaving(false); }
   };
@@ -191,7 +183,6 @@ export default function NewTransaction() {
               <Chip key={c.id} label={`💳 ${c.name}`} selected={pay?.kind === 'card' && pay.id === c.id}
                 onPress={() => setPay({ kind: 'card', id: c.id })} />
             ))}
-            {/* Ocultamos Addi/Cuotas si estamos editando para evitar descuadres de calendarios */}
             {type === 'expense' && !isEditing && (
               <Chip label="Addi / Sistecrédito / otro" selected={pay?.kind === 'bnpl'} onPress={() => { setPay({ kind: 'bnpl' }); setInInstallments(true); }} />
             )}

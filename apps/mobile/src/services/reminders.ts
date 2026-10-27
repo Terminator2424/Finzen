@@ -3,11 +3,6 @@ import * as Notifications from 'expo-notifications';
 import { nextOccurrence, todayString } from '@finzen/core';
 import { getDb } from './db';
 
-/**
- * Avisos LOCALES (los programa el propio teléfono: gratis, sin servidor y sin internet).
- *  - Un día antes de cada cuota sin pagar, a las 9:00.
- *  - Dos días antes del pago límite de cada tarjeta, a las 9:00.
- */
 const CHANNEL = 'finzen-recordatorios';
 
 Notifications.setNotificationHandler({
@@ -32,7 +27,6 @@ export async function ensurePermission(): Promise<boolean> {
   } catch { return false; }
 }
 
-/** Aviso inmediato (p. ej. "compra a crédito detectada"). */
 export async function notifyNow(title: string, body: string): Promise<void> {
   try {
     if (!(await ensurePermission())) return;
@@ -40,7 +34,7 @@ export async function notifyNow(title: string, body: string): Promise<void> {
       content: { title, body },
       trigger: Platform.OS === 'android' ? { channelId: CHANNEL } : null,
     });
-  } catch { /* sin permiso o sin módulo: no pasa nada */ }
+  } catch { /* sin permiso */ }
 }
 
 const cop = (n: number) => '$' + Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -50,16 +44,31 @@ function at9(dateStr: string, daysBefore: number): Date {
   return new Date(y, m - 1, d - daysBefore, 9, 0, 0);
 }
 
-/** Reprograma todos los recordatorios a partir del estado actual de la base de datos. */
+export async function scheduleReconciliationReminder(): Promise<void> {
+  try {
+    if (!(await ensurePermission())) return;
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Revisa tus cuentas',
+        body: '¿Hiciste compras en Addi, Sistecrédito o con Bre-B? Revisa tus borradores para mantener tu patrimonio al día.',
+      },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.WEEKLY, weekday: 1, hour: 9, minute: 0, channelId: CHANNEL },
+    });
+  } catch (e) { console.warn('scheduleReconciliationReminder', e); }
+}
+
 export async function rescheduleReminders(): Promise<number> {
   try {
     if (!(await ensurePermission())) return 0;
     await Notifications.cancelAllScheduledNotificationsAsync();
+    
+    await scheduleReconciliationReminder();
+
     const db = await getDb();
     const now = Date.now();
     let count = 0;
     const schedule = async (when: Date, title: string, body: string) => {
-      if (when.getTime() <= now || count >= 60) return; // Android limita las alarmas programadas
+      if (when.getTime() <= now || count >= 60) return;
       await Notifications.scheduleNotificationAsync({
         content: { title, body },
         trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: when, channelId: CHANNEL },

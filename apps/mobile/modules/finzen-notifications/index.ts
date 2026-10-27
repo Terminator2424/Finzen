@@ -1,10 +1,5 @@
 import { requireOptionalNativeModule } from 'expo';
 
-/**
- * Puente al servicio nativo de lectura de notificaciones (solo Android).
- * Si el módulo no existe (iOS, Expo Go, o un APK anterior a este módulo) todas las
- * funciones devuelven valores neutros: la app sigue funcionando sin lectura automática.
- */
 interface Native {
   isListenerEnabled(): boolean;
   openListenerSettings(): void;
@@ -14,6 +9,7 @@ interface Native {
   getSeenPackages(): string;
   clearSeenPackages(): void;
   drainQueue(): string;
+  stopForegroundService(): void; // <-- Nueva función
   addListener(event: 'onQueued', cb: () => void): { remove(): void };
 }
 
@@ -23,7 +19,6 @@ export interface QueuedNotification { packageName: string; title: string; text: 
 export interface SeenPackage { packageName: string; count: number; last: number }
 
 export const NotificationListener = {
-  /** ¿Existe el módulo nativo en este build? */
   available: native != null,
   isEnabled: (): boolean => native?.isListenerEnabled() ?? false,
   openSettings: () => native?.openListenerSettings(),
@@ -31,6 +26,7 @@ export const NotificationListener = {
   setWhitelist: (patterns: string[]) => native?.setWhitelist(patterns),
   setLearningMode: (on: boolean) => native?.setLearningMode(on),
   clearSeen: () => native?.clearSeenPackages(),
+  stopForegroundService: () => native?.stopForegroundService(), // <-- Nueva función expuesta
   seenPackages(): SeenPackage[] {
     try {
       const obj = JSON.parse(native?.getSeenPackages() ?? '{}') as Record<string, { count: number; last: number }>;

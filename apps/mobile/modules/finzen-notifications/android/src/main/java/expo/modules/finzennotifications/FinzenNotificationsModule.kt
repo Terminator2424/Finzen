@@ -8,10 +8,6 @@ import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
-/**
- * Puente JS ↔ servicio de notificaciones. No expone texto de notificaciones salvo
- * `drainQueue`, que ya viene filtrado por lista blanca y OTP.
- */
 class FinzenNotificationsModule : Module() {
   private val context: Context
     get() = appContext.reactContext ?: throw Exceptions.AppContextLost()
@@ -31,7 +27,6 @@ class FinzenNotificationsModule : Module() {
       NotificationStore.onQueued = null
     }
 
-    // ¿El usuario ya concedió "Acceso a notificaciones" a FinZen?
     Function("isListenerEnabled") {
       val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners") ?: ""
       flat.split(":").any { it.startsWith(context.packageName + "/") }
@@ -42,8 +37,6 @@ class FinzenNotificationsModule : Module() {
       context.startActivity(i)
     }
 
-    // Android 13+: en apps instaladas fuera de Play Store hay que permitir "ajustes restringidos"
-    // desde la ficha de la app antes de poder activar el acceso a notificaciones.
     Function("openAppSettings") {
       val i = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + context.packageName))
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -63,5 +56,13 @@ class FinzenNotificationsModule : Module() {
     Function("clearSeenPackages") { NotificationStore.clearSeen(context) }
 
     Function("drainQueue") { NotificationStore.drain(context) }
+
+    // Nueva función para apagar el servicio si el usuario lo desea
+    Function("stopForegroundService") {
+      try {
+        val intent = Intent(context, FinzenForegroundService::class.java)
+        context.stopService(intent)
+      } catch (_: Exception) {}
+    }
   }
 }
