@@ -29,24 +29,20 @@ jobs:
       - name: 4. Instalar dependencias
         run: npm install
 
-      - name: 5. Generar la carpeta nativa de Android
+      - name: 5. Generar la carpeta nativa
         working-directory: ./apps/mobile
         run: npx expo prebuild --platform android --clean --no-install
 
-      - name: 6. Generar Keystore temporal para firmar
-        run: |
-          keytool -genkey -v -keystore my-release-key.keystore -alias my-key-alias -keyalg RSA -keysize 2048 -validity 10000 -storepass password123 -keypass password123 -dname "CN=FinZen, OU=Mobile, O=FinZen, L=Bogota, ST=Bogota, C=CO" -noprompt
-          mv my-release-key.keystore apps/mobile/android/app/
-
-      - name: 7. Compilar APK Release Firmado
+      - name: 6. Compilar APK (ARM64 para celulares reales)
         working-directory: ./apps/mobile/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          # Forzamos la arquitectura arm64-v8a y armeabi-v7a para Samsung
+          ./gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
 
-      - name: 8. Guardar el APK
+      - name: 7. Guardar el APK
         uses: actions/upload-artifact@v4
         with:
-          name: FinZen-APK-Release
-          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          name: FinZen-APK-ARM
+          path: apps/mobile/android/app/build/outputs/apk/debug/*.apk
           retention-days: 7
