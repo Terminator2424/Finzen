@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 1. Descargar el código (Checkout)
+      - name: 1. Descargar el código
         uses: actions/checkout@v4
 
       - name: 2. Configurar Node.js
@@ -29,19 +29,24 @@ jobs:
       - name: 4. Instalar dependencias
         run: npm install
 
-      - name: 5. Generar la carpeta nativa de Android (Prebuild)
+      - name: 5. Generar la carpeta nativa de Android
         working-directory: ./apps/mobile
         run: npx expo prebuild --platform android --clean --no-install
 
-      - name: 6. Compilar el APK (Debug) con Gradle
+      - name: 6. Generar Keystore temporal para firmar
+        run: |
+          keytool -genkey -v -keystore my-release-key.keystore -alias my-key-alias -keyalg RSA -keysize 2048 -validity 10000 -storepass password123 -keypass password123 -dname "CN=FinZen, OU=Mobile, O=FinZen, L=Bogota, ST=Bogota, C=CO" -noprompt
+          mv my-release-key.keystore apps/mobile/android/app/
+
+      - name: 7. Compilar APK Release Firmado
         working-directory: ./apps/mobile/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
 
-      - name: 7. Guardar el APK como descargable
+      - name: 8. Guardar el APK
         uses: actions/upload-artifact@v4
         with:
-          name: FinZen-APK
-          path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: FinZen-APK-Release
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 7
