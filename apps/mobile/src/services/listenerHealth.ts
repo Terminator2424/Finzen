@@ -9,6 +9,7 @@ interface Native {
   setSenderBinding(on: boolean): void;
   resetSenderBindings(): void;
   setSenderRules(json: string): void;
+  traceLog?(): string;
 }
 
 let native: Native | null = null;
@@ -36,6 +37,10 @@ export interface HealthSnapshot {
 
 export function getHealth(): HealthSnapshot | null {
   try { return native ? (JSON.parse(native.health()) as HealthSnapshot) : null; } catch { return null; }
+}
+
+export function getTrace(): { t: number; p: string; s: string }[] {
+  try { return native?.traceLog ? (JSON.parse(native.traceLog()) as { t: number; p: string; s: string }[]) : []; } catch { return []; }
 }
 
 export const forceRebind = () => { try { native?.forceRebind(); } catch { /* noop */ } };

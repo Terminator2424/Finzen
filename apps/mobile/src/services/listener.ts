@@ -30,21 +30,32 @@ let draining: Promise<number> | null = null;
 const MAX_ATTEMPTS = 3;
 const attempts = new Map<string, number>();
 
+/** Ultimos resultados de importacion, visibles en la pantalla de diagnostico. */
+export const ingestLog: string[] = [];
+function logIngest(line: string) {
+  ingestLog.push(`${new Date().toLocaleTimeString()} ${line}`);
+  if (ingestLog.length > 30) ingestLog.shift();
+}
+
 /** Procesa la cola nativa. Devuelve cuantas transacciones nuevas se importaron. */
 export function drainAndIngest(): Promise<number> {
   draining ??= (async () => {
     try {
       const items = NotificationListener.peek();
       if (items.length === 0) return 0;
+      logIngest(`cola: ${items.length} pendiente(s)`);
       const pendingBefore = (await listPending()).length;
       let imported = 0;
       const done: string[] = [];
       for (const n of items) {
         try {
-          if ((await ingestNotification(n)) === 'imported') imported++;
+          const out = await ingestNotification(n);
+          logIngest(`${n.packageName}: ${out}`);
+          if (out === 'imported') imported++;
           if (n.id) { done.push(n.id); attempts.delete(n.id); }
         } catch (e) {
           console.warn('No se pudo procesar una notificacion', e);
+          logIngest(`${n.packageName}: ERROR ${e instanceof Error ? e.message : String(e)}`);
           if (n.id) {
             const k = (attempts.get(n.id) ?? 0) + 1;
             if (k >= MAX_ATTEMPTS) { done.push(n.id); attempts.delete(n.id); } else attempts.set(n.id, k);

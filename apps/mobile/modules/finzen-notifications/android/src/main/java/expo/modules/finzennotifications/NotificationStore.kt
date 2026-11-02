@@ -170,7 +170,13 @@ object NotificationStore {
 
     val n = sbn.notification ?: return
     if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
-    if (!matchesWhitelist(ctx, p, pkg)) return
+    if (!matchesWhitelist(ctx, p, pkg)) {
+      // Temporal: solo apps financieras conocidas, para no llenar la bitacora con ruido.
+      if (!replay && Regex("nequi|\\.nu\\.|nubank|addi|sistecredito|whatsapp|bancolombia|daviplata", I).containsMatchIn(pkg)) {
+        ListenerHealth.trace(ctx, pkg, "NO_EN_LISTA_BLANCA")
+      }
+      return
+    }
 
     val extras = n.extras ?: return
     val title = (extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: "").take(MAX_FIELD)
@@ -195,10 +201,10 @@ object NotificationStore {
         ?: extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.joinToString(" ") { it.toString() }
         ?: ""
     ).take(MAX_FIELD)
-    if (text.isBlank()) return
+    if (text.isBlank()) { ListenerHealth.trace(ctx, pkg, "TEXTO_VACIO"); return }
 
     val combined = "$title $text"
-    if (OTP_PATTERNS.any { it.containsMatchIn(combined) }) return
+    if (OTP_PATTERNS.any { it.containsMatchIn(combined) }) { ListenerHealth.trace(ctx, pkg, "DESCARTADA_OTP"); return }
 
     val at = lastMsg?.timestamp?.takeIf { it > 0L } ?: sbn.postTime
     val item = JSONObject()
@@ -209,7 +215,9 @@ object NotificationStore {
       .put("receivedAt", at)
     if (senderKey != null) item.put("senderKey", senderKey)
 
-    if (enqueue(ctx, p, item, fingerprint(pkg, at, text))) {
+    val queued = enqueue(ctx, p, item, fingerprint(pkg, at, text))
+    ListenerHealth.trace(ctx, pkg, if (queued) "ENCOLADA" else "DUPLICADA_O_FALLO_CIFRADO")
+    if (queued) {
       ListenerHealth.markQueued(ctx)
       onQueued?.invoke()
     }

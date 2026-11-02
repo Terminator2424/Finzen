@@ -84,6 +84,7 @@ class FinzenNotificationsModule : Module() {
 
     // Salud y autorreparacion
     Function("health") { ListenerHealth.snapshot(context) }
+    Function("traceLog") { ListenerHealth.traceJson(context) }
     Function("requestRebind") { ListenerHealth.requestRebind(context) }
     Function("forceRebind") { ListenerHealth.forceRebind(context) }
     Function("setPersistentMode") { on: Boolean -> ListenerHealth.setPersistent(context, on) }

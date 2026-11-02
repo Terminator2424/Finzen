@@ -5,10 +5,10 @@ import { parseNotification } from '@finzen/core';
 import { NotificationListener, type SeenPackage } from '../modules/finzen-notifications';
 import { AppText, Button, Card, Field, ScreenHeader } from '../src/components/ui';
 import { getDb } from '../src/services/db';
-import { syncWhitelist } from '../src/services/listener';
+import { drainAndIngest, ingestLog, syncWhitelist } from '../src/services/listener';
 import {
   ensureListenerAlive, forceRebind, getHealth, openBatteryExemption, resetSenderBindings,
-  setPersistentMode, setSenderBinding, type HealthSnapshot,
+  getTrace, setPersistentMode, setSenderBinding, type HealthSnapshot,
 } from '../src/services/listenerHealth';
 import { uid } from '../src/services/repo';
 import { useTheme } from '../src/theme/ThemeProvider';
@@ -109,6 +109,21 @@ export default function NotificationSources() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView contentContainerStyle={{ padding: 20, gap: 14 }}>
         <ScreenHeader title="Lectura de notificaciones" />
+
+        <Card style={{ borderColor: colors.warning }}>
+          <AppText variant="subtitle">🔎 Diagnóstico</AppText>
+          <AppText variant="caption" color={colors.textSecondary}>Filtro nativo (lo más reciente arriba):</AppText>
+          {getTrace().slice(-8).reverse().map((e, i) => (
+            <AppText key={`t${i}`} variant="caption">{new Date(e.t).toLocaleTimeString()} {e.p} → {e.s}</AppText>
+          ))}
+          {getTrace().length === 0 && <AppText variant="caption">(vacío: ninguna notificación llegó a una app de la lista)</AppText>}
+          <AppText variant="caption" color={colors.textSecondary} style={{ marginTop: 8 }}>Importación:</AppText>
+          {ingestLog.slice(-8).reverse().map((l, i) => (
+            <AppText key={`l${i}`} variant="caption">{l}</AppText>
+          ))}
+          {ingestLog.length === 0 && <AppText variant="caption">(vacío)</AppText>}
+          <Button variant="ghost" label="Importar cola ahora" onPress={() => { drainAndIngest().then(load).catch(() => {}); }} />
+        </Card>
 
         {!NotificationListener.available && (
           <Card style={{ borderColor: colors.warning }}>

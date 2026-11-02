@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.service.notification.NotificationListenerService
 import androidx.core.app.NotificationManagerCompat
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** Estado del lector + utilidades para mantenerlo enganchado. */
@@ -85,6 +86,20 @@ object ListenerHealth {
   fun ignoringBattery(ctx: Context): Boolean = try {
     (ctx.getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(ctx.packageName)
   } catch (_: Throwable) { false }
+
+  /** Ultimas 20 decisiones del filtro nativo: paquete + motivo. Sin texto de notificaciones. */
+  fun trace(ctx: Context, pkg: String, stage: String) {
+    synchronized(this) {
+      val sp = p(ctx)
+      val arr = try { JSONArray(sp.getString("trace", "[]")) } catch (_: Throwable) { JSONArray() }
+      arr.put(JSONObject().put("t", System.currentTimeMillis()).put("p", pkg).put("s", stage))
+      val out = JSONArray()
+      for (i in maxOf(0, arr.length() - 20) until arr.length()) out.put(arr.get(i))
+      sp.edit().putString("trace", out.toString()).apply()
+    }
+  }
+
+  fun traceJson(ctx: Context): String = p(ctx).getString("trace", "[]") ?: "[]"
 
   fun snapshot(ctx: Context): String {
     val sp = p(ctx)
