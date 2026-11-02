@@ -2,8 +2,11 @@
  * Validación de respaldos a restaurar. Un archivo de respaldo NO es de confianza: puede venir
  * de otra persona o estar manipulado. Reglas:
  *  - Solo se aceptan ajustes de una lista cerrada (tema y estado del onboarding). Un respaldo
- *    jamás debe poder cambiar ajustes de dispositivo (PIN, IA, URL de Ollama…): por ejemplo,
- *    apuntar la IA a un servidor del atacante para recibir tus totales.
+ *    jamás debe poder cambiar ajustes de dispositivo (PIN, IA, URL de Ollama…).
+ *  - Las fuentes de notificaciones (notification_sources) se reconstruyen desde cero: solo las
+ *    agregadas por el usuario, con patrón exacto "^paquete$", SIEMPRE desactivadas y SIN
+ *    vínculo (bound_package). Así un respaldo no puede activar la lectura de SMS/WhatsApp,
+ *    meter un regex catastrófico ni preasignar un paquete falso como "verdadero".
  *  - Tamaño y número de filas acotados (evita agotar la memoria).
  *  - Todo valor se escribe con parámetros; los nombres de columna se filtran contra el esquema.
  */
@@ -40,4 +43,29 @@ export function assertBackupSize(text: string, tables: Record<string, unknown[]>
   let n = 0;
   for (const rows of Object.values(tables)) n += Array.isArray(rows) ? rows.length : 0;
   if (n > MAX_BACKUP_ROWS) throw new Error('El respaldo tiene demasiadas filas.');
+}
+
+/** Patrón que genera la UI: ^com\.paquete\.app$ (solo minúsculas, dígitos, _ y puntos escapados). */
+const USER_PATTERN = /^\^(?:[a-z0-9_]|\\\.){3,150}\$$/;
+
+export interface RestoredSource {
+  id: string;
+  label: string;
+  kind: 'bank' | 'wallet' | 'bnpl';
+  package_pattern: string;
+  enabled: 0;
+  user_added: 1;
+  bound_package: null;
+}
+
+/** Devuelve la fila saneada o null si no es aceptable. Úsala en el restore de notification_sources. */
+export function sanitizeRestoredSource(r: unknown): RestoredSource | null {
+  if (!isPlainRow(r)) return null;
+  const { id, label, kind, package_pattern, user_added } = r;
+  if (user_added !== 1) return null; // las predefinidas las siembra la app, nunca el respaldo
+  if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
+  if (typeof label !== 'string' || label.length === 0 || label.length > 80) return null;
+  if (kind !== 'bank' && kind !== 'wallet' && kind !== 'bnpl') return null;
+  if (typeof package_pattern !== 'string' || !USER_PATTERN.test(package_pattern)) return null;
+  return { id, label, kind, package_pattern, enabled: 0, user_added: 1, bound_package: null };
 }

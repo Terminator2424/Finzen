@@ -1,7 +1,5 @@
 package expo.modules.finzennotifications
 
-import android.content.Intent
-import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 
@@ -9,28 +7,35 @@ class FinzenNotificationListener : NotificationListenerService() {
 
   override fun onListenerConnected() {
     super.onListenerConnected()
-    startForegroundService()
+    val ctx = applicationContext
+    ListenerHealth.markConnected(ctx)
+    ListenerWatchdogJob.schedule(ctx)
+    // Recupera lo que llego mientras el servicio estuvo desenganchado (sigue en la barra).
+    try {
+      activeNotifications?.forEach {
+        try { NotificationStore.handle(ctx, it, replay = true) } catch (_: Throwable) {}
+      }
+    } catch (t: Throwable) {
+      ListenerHealth.recordError(ctx, "replay:" + t.javaClass.simpleName)
+    }
+    if (ListenerHealth.persistent(ctx)) {
+      try { ListenerHealth.setPersistent(ctx, true) } catch (_: Throwable) {}
+    }
   }
 
-  private fun startForegroundService() {
-    try {
-      val intent = Intent(this, FinzenForegroundService::class.java)
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        startForegroundService(intent)
-      } else {
-        startService(intent)
-      }
-    } catch (_: Exception) {
-      // Si falla, no rompemos el flujo
-    }
+  override fun onListenerDisconnected() {
+    super.onListenerDisconnected()
+    ListenerHealth.markDisconnected(applicationContext)
+    // CLAVE: sin esto el sistema no vuelve a enlazar el servicio hasta reinstalar el APK.
+    ListenerHealth.requestRebind(applicationContext)
   }
 
   override fun onNotificationPosted(sbn: StatusBarNotification?) {
     if (sbn == null) return
     try {
       NotificationStore.handle(applicationContext, sbn)
-    } catch (_: Throwable) {
-      // Silencioso
+    } catch (t: Throwable) {
+      ListenerHealth.recordError(applicationContext, "handle:" + t.javaClass.simpleName)
     }
   }
 }

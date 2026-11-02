@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { parseCopAmount } from './parse';
-import { processNotification } from './pipeline';
+import { processNotification as processWith } from './pipeline';
+import { TEST_SOURCES } from './testSources';
+const processNotification = (n: Parameters<typeof processWith>[0]) => processWith(n, TEST_SOURCES);
 import { isOtp, maskSensitive } from './sanitize';
-import { matchSource } from './sources';
+import { matchSource as matchWith } from './sources';
+const matchSource = (p: string) => matchWith(p, TEST_SOURCES);
 
 const T = 1_760_000_000_000;
 

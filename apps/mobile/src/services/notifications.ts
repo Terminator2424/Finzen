@@ -18,7 +18,7 @@ async function loadSources(): Promise<NotificationSource[]> {
   return rows.map((r) => ({ id: r.id, label: r.label, kind: r.kind, packagePattern: r.package_pattern }));
 }
 
-const LOG_DAYS = 30;
+const LOG_DAYS = 7;
 const LOG_MAX_ROWS = 500;
 
 /** Minimización de datos: la bitácora de notificaciones no crece sin límite. */

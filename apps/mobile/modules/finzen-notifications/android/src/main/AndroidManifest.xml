@@ -1,10 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-  <!-- Permisos necesarios para el Foreground Service -->
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
   <application>
-    <!-- Listener Original -->
     <service
       android:name="expo.modules.finzennotifications.FinzenNotificationListener"
       android:label="FinZen"
@@ -15,10 +16,27 @@
       </intent-filter>
     </service>
 
-    <!-- Nuevo Foreground Service -->
     <service
       android:name="expo.modules.finzennotifications.FinzenForegroundService"
       android:exported="false"
-      android:foregroundServiceType="dataSync" />
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="notification_listener_keepalive" />
+    </service>
+
+    <service
+      android:name="expo.modules.finzennotifications.ListenerWatchdogJob"
+      android:exported="false"
+      android:permission="android.permission.BIND_JOB_SERVICE" />
+
+    <receiver
+      android:name="expo.modules.finzennotifications.ListenerBootReceiver"
+      android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
   </application>
 </manifest>

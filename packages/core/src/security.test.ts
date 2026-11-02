@@ -1,3 +1,4 @@
+import { TEST_SOURCES } from './notifications/testSources';
 import { describe, expect, it } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { buildSchedule } from './credit';
@@ -54,7 +55,7 @@ describe('denegación de servicio por entradas', () => {
   it('una notificación gigantesca se procesa rápido y se trunca', () => {
     const big = 'Pagaste $5.000 en Tienda ' + '9 '.repeat(200_000);
     const t0 = Date.now();
-    const r = processNotification({ packageName: 'com.nequi.MobileApp', text: big, receivedAt: 1 });
+    const r = processNotification({ packageName: 'com.nequi.MobileApp', text: big, receivedAt: 1 }, TEST_SOURCES);
     expect(Date.now() - t0).toBeLessThan(500);
     expect(r.outcome === 'imported' && r.maskedText.length).toBeLessThanOrEqual(300);
   });
@@ -63,7 +64,7 @@ describe('denegación de servicio por entradas', () => {
 describe('evasión del filtro de OTP', () => {
   it('una clave escondida delante de mucho relleno igual se descarta', () => {
     const text = '482913 ' + 'x '.repeat(1500) + 'no lo compartas con nadie';
-    const r = processNotification({ packageName: 'com.nequi.MobileApp', text, receivedAt: 1 });
+    const r = processNotification({ packageName: 'com.nequi.MobileApp', text, receivedAt: 1 }, TEST_SOURCES);
     expect(r.outcome).toBe('discarded_otp');
   });
 });
