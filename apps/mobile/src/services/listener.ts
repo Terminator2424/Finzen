@@ -21,6 +21,8 @@ function logIngest(line: string) {
   if (ingestLog.length > 30) ingestLog.shift();
 }
 
+let lastSig = '';
+
 /** Sincroniza la lista blanca de la base de datos hacia el servicio nativo. */
 export async function syncWhitelist(): Promise<void> {
   const db = await getDb();
@@ -28,7 +30,8 @@ export async function syncWhitelist(): Promise<void> {
     'SELECT package_pattern FROM notification_sources WHERE enabled=1',
   );
   NotificationListener.setWhitelist(rows.map((r) => r.package_pattern));
-  logIngest(`lista blanca enviada: ${rows.length} patron(es)`);
+  const sig = rows.map((r) => r.package_pattern).sort().join('|');
+  if (sig !== lastSig) { lastSig = sig; logIngest(`lista blanca enviada: ${rows.length} patron(es)`); }
 }
 
 /** Una notificacion que falla 3 veces se descarta para que no bloquee la cola para siempre. */
@@ -106,6 +109,6 @@ export function startListenerBridge(onImported?: () => void): () => void {
   const sub = NotificationListener.onQueued(run);
   const app = AppState.addEventListener('change', (s) => { if (s === 'active') boot(); });
   // Respaldo: si el aviso en vivo del servicio nativo no llega, la cola igual se revisa.
-  const poll = setInterval(run, 20_000);
+  const poll = setInterval(() => { syncWhitelist().catch(() => {}); run(); }, 20_000);
   return () => { sub.remove(); app.remove(); clearInterval(poll); };
 }
