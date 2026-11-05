@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_SOURCES } from '@finzen/core';
+const TEST_SOURCES = [
+  { id: 'nequi', label: 'Nequi', kind: 'wallet', packagePattern: '^com\\.nequi\\.' },
+  { id: 'nu', label: 'Nu', kind: 'bank', packagePattern: '^com\\.nu\\.' },
+  { id: 'addi', label: 'Addi', kind: 'bnpl', packagePattern: '^com\\.addi\\.' },
+];
 import { runMigrations, seedCategoriesSql } from '@finzen/db';
 
 /**
@@ -32,7 +36,7 @@ async function freshDb() {
     setUserVersion: async (v) => raw.exec(`PRAGMA user_version = ${v}`),
   });
   raw.exec(seedCategoriesSql(1));
-  for (const s of DEFAULT_SOURCES) {
+  for (const s of TEST_SOURCES) {
     raw.prepare('INSERT INTO notification_sources (id,label,kind,package_pattern,enabled,user_added) VALUES (?,?,?,?,1,0)')
       .run(s.id, s.label, s.kind, s.packagePattern);
   }
@@ -239,5 +243,54 @@ describe('seguridad de la lectura de notificaciones', () => {
     await db.runAsync("INSERT INTO notifications_log (id,source_package,received_at,masked_text,outcome) VALUES ('old1','com.x',?,'viejo','imported')", [old]);
     await ingestNotification(nequi('com.nequi.MobileApp'));
     expect(await db.getAllAsync("SELECT id FROM notifications_log WHERE id='old1'")).toHaveLength(0);
+  });
+});
+
+
+describe('pago de tarjeta por notificación', () => {
+  const pago = { packageName: 'com.nu.production', text: '¡Bravo! Pagaste tu tarjeta de crédito Nu Recibimos tu pago por $50.000. En un rato podrás verlo en tu app.' };
+  const t0 = Math.floor(Date.now() / 60_000) * 60_000;
+
+  async function conNu() {
+    const { cardId } = await setup();
+    await createTransaction({ type: 'expense', amount: 200_000, merchant: 'X', categoryId: 'cat_otros', paymentMethod: 'credit', cardId });
+    await addAccount({ name: 'Nu', kind: 'savings', balance: 500_000, currency: 'COP' });
+    const nuId = (await listAccounts()).find((a) => a.name === 'Nu')!.id;
+    return { cardId, nuId };
+  }
+
+  it('abona a la tarjeta Nu y descuenta de la cuenta Nu', async () => {
+    const { cardId, nuId } = await conNu();
+    expect(await ingestNotification({ ...pago, receivedAt: t0 })).toBe('imported');
+    expect((await getDebt(cardId))!.balance).toBe(150_000);
+    expect((await listAccounts()).find((a) => a.id === nuId)!.balance).toBe(450_000);
+    expect((await monthTotals(monthKey())).debtPayments).toBe(50_000);
+  });
+
+  it('la misma notificación dos veces no abona dos veces', async () => {
+    const { cardId } = await conNu();
+    await ingestNotification({ ...pago, receivedAt: t0 });
+    expect(await ingestNotification({ ...pago, receivedAt: t0 + 5_000 })).toBe('duplicate');
+    expect((await getDebt(cardId))!.balance).toBe(150_000);
+  });
+
+  it('borrar el abono devuelve la deuda y la plata a la cuenta', async () => {
+    const { cardId, nuId } = await conNu();
+    await ingestNotification({ ...pago, receivedAt: t0 });
+    const db = holder.db as any;
+    const [row] = await db.getAllAsync("SELECT id FROM transactions WHERE category_id='cat_deudas'");
+    expect(await deleteTransaction(row.id)).toBe(true);
+    expect((await getDebt(cardId))!.balance).toBe(200_000);
+    expect((await listAccounts()).find((a) => a.id === nuId)!.balance).toBe(500_000);
+  });
+
+  it('sin una tarjeta que calce no se adivina: queda en Borradores', async () => {
+    await addAccount({ name: 'Nu', kind: 'savings', balance: 500_000, currency: 'COP' });
+    expect(await ingestNotification({ ...pago, receivedAt: t0 })).toBe('discarded_unparsed');
+    const db = holder.db as any;
+    expect(await db.getAllAsync('SELECT id FROM transactions')).toHaveLength(0);
+    const log = await db.getAllAsync("SELECT outcome, masked_text FROM notifications_log WHERE outcome='discarded_unparsed'");
+    expect(log).toHaveLength(1);
+    expect(log[0].masked_text).toContain('Recibimos tu pago');
   });
 });

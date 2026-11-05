@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import Constants from 'expo-constants';
 import { useRouter, type Href } from 'expo-router';
@@ -7,7 +7,6 @@ import { NotificationListener } from '../../modules/finzen-notifications';
 import { AppText, Card, Chip, InfoRow } from '../../src/components/ui';
 import { useFocusData } from '../../src/hooks/useFocusData';
 import { getDb, isDbEncrypted } from '../../src/services/db';
-import { SIMULATED_NOTIFICATIONS, ingestNotification } from '../../src/services/notifications';
 import { isSignedIn, lastSyncAt, pendingCount } from '../../src/services/sync';
 import { PALETTES, type ModePreference, type PaletteId } from '../../src/theme/palettes';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -34,8 +33,7 @@ async function diagnostics() {
 export default function Settings() {
   const { colors, paletteId, mode, setPalette, setMode } = useTheme();
   const router = useRouter();
-  const [diag, reloadDiag] = useFocusData(diagnostics, { version: 0, queue: 0, tx: 0, synced: false, last: null as number | null, listener: '—', encrypted: true });
-  const [simResult, setSimResult] = useState<string | null>(null);
+  const [diag] = useFocusData(diagnostics, { version: 0, queue: 0, tx: 0, synced: false, last: null as number | null, listener: '—', encrypted: true });
 
   const link = (label: string, path: string, hint?: string) => (
     <Pressable key={path} onPress={() => router.push(path as Href)} style={{ paddingVertical: 8 }}>
@@ -67,6 +65,7 @@ export default function Settings() {
         <Card>
           <AppText variant="subtitle">Captura automática</AppText>
           {link('Lectura de notificaciones', '/notification-sources', `Estado: ${diag.listener}. Elige qué bancos y billeteras lee FinZen.`)}
+          {link('Probar notificaciones', '/notification-test', 'Pega el texto de una notificación y mira cómo la interpreta FinZen.')}
           {link('Reglas de categorización', '/rules')}
         </Card>
 
@@ -74,7 +73,7 @@ export default function Settings() {
           <AppText variant="subtitle">Finanzas</AppText>
           {link('Cuentas y activos', '/accounts')}
           {link('Presupuestos mensuales', '/budgets')}
-          {link('Gastos fijos y suscripciones', '/recurring')} {/* <--- NUEVO */}
+          {link('Gastos fijos y suscripciones', '/recurring')}
           {link('Escanear un recibo', '/scan')}
         </Card>
 
@@ -87,31 +86,10 @@ export default function Settings() {
         </Card>
 
         <Card>
-          <AppText variant="subtitle">Probar notificaciones</AppText>
-          <AppText variant="caption" color={colors.textSecondary}>
-            Simula una notificación para ver el flujo completo (filtro de seguridad → compra pendiente → cuotas) sin esperar una real.
-          </AppText>
-          {SIMULATED_NOTIFICATIONS.map((n) => (
-            <Pressable
-              key={n.label}
-              onPress={async () => {
-                const out = await ingestNotification({ packageName: n.packageName, text: n.text, receivedAt: Date.now() });
-                setSimResult(`${n.label} → ${out}`);
-                reloadDiag();
-              }}
-              style={{ paddingVertical: 6 }}
-            >
-              <AppText color={colors.primary}>▶ {n.label}</AppText>
-            </Pressable>
-          ))}
-          {simResult && <AppText variant="caption" color={colors.textSecondary}>{simResult}</AppText>}
-        </Card>
-
-        <Card>
           <AppText variant="subtitle">Diagnóstico</AppText>
           <InfoRow label="Versión de la app" value={Constants.expoConfig?.version ?? '-'} />
           <InfoRow label="Versión de la base de datos" value={String(diag.version)} />
-          <InfoRow label="Base de datos" value={diag.encrypted ? 'Cifrada (AES-256)' : '⚠ SIN CIFRAR'} color={diag.encrypted ? colors.success : colors.danger} />
+          <InfoRow label="Base de datos" value={diag.encrypted ? 'Cifrada (AES-256)' : '⚠ SIN CIFRAR'} color={diag.encrypted ? colors.success : colors.danger}/>
           <InfoRow label="Transacciones" value={String(diag.tx)} />
           <InfoRow label="Lector de notificaciones" value={diag.listener} />
           <InfoRow label="Sincronización" value={diag.synced ? 'Conectada' : 'No configurada'} />

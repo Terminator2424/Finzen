@@ -1,9 +1,8 @@
 import { processNotification, type NotificationSource, type RawNotification } from '@finzen/core';
 import { getDb } from './db';
 import { adjustAccount, patchRow, uid, writeRow } from './repo';
-import { rescheduleReminders } from './reminders';
 import { SMS_PACKAGES } from './senderRules';
-import { findCardsForApp, registerDebtPayment, suggestCategory } from './transactions';
+import { findAccountForApp, findCardsForApp, registerDebtPayment, suggestCategory } from './transactions';
 
 /**
  * Recibe una notificación cruda (de Android o del simulador), la pasa por el pipeline de
@@ -11,6 +10,8 @@ import { findCardsForApp, registerDebtPayment, suggestCategory } from './transac
  * solo la versión enmascarada, y nada si fue OTP o de una app fuera de la lista blanca.
  */
 export type IngestOutcome = 'imported' | 'duplicate' | 'discarded_otp' | 'discarded_not_whitelisted' | 'discarded_unparsed' | 'bill_saved';
+/** Lo que admite la columna notifications_log.outcome. */
+type LoggedOutcome = Exclude<IngestOutcome, 'bill_saved'>;
 
 async function loadSources(): Promise<NotificationSource[]> {
   const db = await getDb();
@@ -54,7 +55,7 @@ export async function ingestNotification(raw: RawNotification): Promise<IngestOu
   const result = processNotification(raw, sources);
   await pruneLog(db);
   const logId = uid();
-  const log = (outcome: IngestOutcome, maskedText: string | null, hash: string | null, txId: string | null) =>
+  const log = (outcome: LoggedOutcome, maskedText: string | null, hash: string | null, txId: string | null) =>
     db.runAsync(
       'INSERT INTO notifications_log (id,source_package,received_at,masked_text,text_hash,outcome,transaction_id) VALUES (?,?,?,?,?,?,?)',
       [logId, raw.packageName, raw.receivedAt, maskedText, hash, outcome, txId],
@@ -78,8 +79,9 @@ export async function ingestNotification(raw: RawNotification): Promise<IngestOu
     return 'discarded_not_whitelisted';
   }
 
+  // Aviso de factura por pagar (p. ej. SMS de Tigo): no es un gasto, se guarda como pago recurrente.
   if (result.outcome === 'bill') {
-    // Solo se guardan facturas de remitentes conocidos (SMS/WhatsApp); otras (p. ej. un extracto) van a Borradores.
+    // Solo facturas de remitentes conocidos (SMS/WhatsApp); otras (p. ej. un extracto) van a Borradores.
     if (!raw.senderKey) {
       await log('discarded_unparsed', result.maskedText, null, null);
       return 'discarded_unparsed';
@@ -104,7 +106,6 @@ export async function ingestNotification(raw: RawNotification): Promise<IngestOu
       }
       await log('imported', result.maskedText, result.dedupeHash, null);
     });
-    await rescheduleReminders();
     return 'bill_saved';
   }
 
@@ -113,48 +114,39 @@ export async function ingestNotification(raw: RawNotification): Promise<IngestOu
 
   const p = result.parsed;
 
-  // Pago de tarjeta de credito (p. ej. Nu: "Pagaste tu tarjeta de credito"): se abona a la tarjeta de esa app.
+  // Pago de tarjeta de crédito (p. ej. Nu: "Pagaste tu tarjeta de crédito").
   if (p.isCardPayment) {
     const cards = await findCardsForApp(raw.packageName);
     if (cards.length === 1) {
+      // Una sola tarjeta calza con la app: se abona sola y se descuenta de la cuenta de esa app (si hay una).
       const paidTx = await registerDebtPayment({
-        debtId: cards[0]!.id, amount: p.amount, occurredAt: raw.receivedAt, source: 'notification', dedupeHash: result.dedupeHash,
+        debtId: cards[0]!.id, amount: p.amount, accountId: await findAccountForApp(raw.packageName),
+        occurredAt: raw.receivedAt, source: 'notification', dedupeHash: result.dedupeHash,
       });
       await log('imported', result.maskedText, result.dedupeHash, paidTx);
       return 'imported';
     }
-    if (cards.length > 1) {
-      // Varias tarjetas posibles: queda por revisar para que el usuario elija cual.
-      const reviewNow = Date.now();
-      const reviewId = uid();
-      await db.withTransactionAsync(async () => {
-        await writeRow(db, 'transactions', {
-          id: reviewId, account_id: null, category_id: 'cat_deudas', debt_id: null,
-          type: 'expense', amount: p.amount, merchant: 'Pago de tarjeta (elegir cual)',
-          note: 'Pago de tarjeta detectado: falta indicar a que tarjeta se abona.',
-          occurred_at: raw.receivedAt, source: 'notification', payment_method: 'unknown', status: 'needs_review',
-          dedupe_hash: result.dedupeHash, created_at: reviewNow, updated_at: reviewNow, deleted_at: null,
-        });
-        await log('imported', result.maskedText, result.dedupeHash, reviewId);
-      });
-      return 'imported';
-    }
-    // Sin tarjetas registradas: sigue el flujo normal (queda como pago de deuda sin tarjeta).
+    // 0 o varias tarjetas posibles: no se adivina. Va a Borradores y "Procesar" abre el formulario de abono a deuda.
+    const seenDraft = await db.getFirstAsync<{ id: string }>('SELECT id FROM notifications_log WHERE text_hash=?', [result.dedupeHash]);
+    if (seenDraft) { await log('duplicate', result.maskedText, result.dedupeHash, null); return 'duplicate'; }
+    await log('discarded_unparsed', result.maskedText, result.dedupeHash, null);
+    return 'discarded_unparsed';
   }
+
   const source = sources.find((s) => s.id === result.sourceId);
   const now = Date.now();
   const txId = uid();
   const categoryId = p.isDebtPayment ? 'cat_deudas' : p.type === 'income' ? 'cat_ingreso_otros' : p.merchant ? await suggestCategory(p.merchant) : null;
   const status = p.needsInstallments ? 'needs_installments' : 'posted';
 
-  // Cuenta asociada: la que se llame como la app (p. ej. app "Nequi" → cuenta "Nequi").
+  // Cuenta asociada: la que se llame como la fuente o, si no, como la app (app "com.nu.production" -> cuenta "Nu").
   let accountId: string | null = null;
   if (!p.needsInstallments && p.paymentMethod !== 'credit' && source) {
     const acc = await db.getFirstAsync<{ id: string }>(
       "SELECT id FROM accounts WHERE deleted_at IS NULL AND archived=0 AND lower(name) LIKE '%' || lower(?) || '%' LIMIT 1",
       [source.label],
     );
-    accountId = acc?.id ?? null;
+    accountId = acc?.id ?? (await findAccountForApp(raw.packageName));
   }
 
   await db.withTransactionAsync(async () => {

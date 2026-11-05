@@ -1,7 +1,8 @@
 import React from 'react';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { Alert, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { parseNotification } from '@finzen/core';
 import { AppText, Button, Card, ScreenHeader } from '../src/components/ui';
 import { useFocusData } from '../src/hooks/useFocusData';
 import { deleteAllDrafts, deleteDraft, listDrafts, type DraftNotification } from '../src/services/notifications';
@@ -13,11 +14,16 @@ export default function DraftsScreen() {
   const [drafts, reload] = useFocusData(listDrafts, []);
 
   const handleProcess = (draft: DraftNotification) => {
+    const parsed = parseNotification(draft.masked_text || '', 'bank');
+    const debtPayment = !!parsed?.isDebtPayment;
     router.push({
       pathname: '/transaction/new',
-      params: { 
-        merchant: draft.masked_text, 
-        draftId: draft.id
+      params: {
+        merchant: debtPayment ? '' : draft.masked_text,
+        draftId: draft.id,
+        pkg: draft.source_package,
+        ...(parsed ? { amount: String(parsed.amount) } : {}),
+        ...(debtPayment ? { kind: 'debt' } : {}),
       },
     });
   };
@@ -29,14 +35,13 @@ export default function DraftsScreen() {
     ]);
   };
 
-  // NUEVO: Función para borrar todo
   const handleDeleteAll = () => {
     if (drafts.length === 0) return;
     Alert.alert('Borrar todo', '¿Seguro que quieres borrar TODAS las notificaciones pendientes?', [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Borrar todo', style: 'destructive', onPress: async () => { 
-        await deleteAllDrafts(); 
-        reload(); 
+      { text: 'Borrar todo', style: 'destructive', onPress: async () => {
+        await deleteAllDrafts();
+        reload();
       } },
     ]);
   };
@@ -45,18 +50,17 @@ export default function DraftsScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView contentContainerStyle={{ padding: 20, gap: 12 }}>
         <ScreenHeader title="Borradores por revisar" />
-        
-        {/* NUEVO: Botón de borrar todo */}
+
         {drafts.length > 0 && (
-          <Button 
-            variant="ghost" 
-            label="🗑️ Borrar todas las notificaciones" 
-            onPress={handleDeleteAll} 
+          <Button
+            variant="ghost"
+            label="🗑️ Borrar todas las notificaciones"
+            onPress={handleDeleteAll}
           />
         )}
 
         <AppText color={colors.textSecondary} style={{ marginBottom: 8 }}>
-          FinZen recibió estas notificaciones pero no las entendió. Procesa los mensajes que sí sean transacciones o borra todo si es basura.
+          FinZen recibió estas notificaciones pero no pudo registrarlas solo (formato desconocido o, en un pago de tarjeta, no hay una única tarjeta que calce). Procesa las que sean movimientos o borra todo si es basura.
         </AppText>
 
         {drafts.length === 0 && (

@@ -412,6 +412,17 @@ export async function findCardsForApp(packageName: string): Promise<{ id: string
   return cards.filter((c) => nameMatches(tokens, c.provider, c.name)).map((c) => ({ id: c.id, name: c.name }));
 }
 
+/** Cuenta cuyo nombre calza con la app (app Nu -> cuenta "Nu"). Si hay 0 o varias, null: no se adivina. */
+export async function findAccountForApp(packageName: string): Promise<string | null> {
+  const db = await getDb();
+  const accs = await db.getAllAsync<{ id: string; name: string }>(
+    'SELECT id, name FROM accounts WHERE deleted_at IS NULL AND archived=0',
+  );
+  const tokens = appTokens(packageName);
+  const hits = accs.filter((a) => nameMatches(tokens, a.name));
+  return hits.length === 1 ? hits[0]!.id : null;
+}
+
 export interface DebtPaymentInput {
   debtId: string;
   amount: number;
@@ -427,7 +438,7 @@ export interface DebtPaymentInput {
  * Abono a una tarjeta de credito: baja su saldo y queda como movimiento de categoria "Deudas"
  * (monthTotals lo separa en debtPayments, asi no cuenta dos veces como gasto).
  * Si se indica una cuenta, el dinero tambien sale de esa cuenta.
- * Si el abono supera el saldo registrado, el saldo queda negativo (saldo a favor) para que se pueda revertir exacto.
+ * Si el abono supera el saldo registrado, el saldo queda en 0 (igual que payCard).
  */
 export async function registerDebtPayment(p: DebtPaymentInput): Promise<string> {
   const db = await getDb();
@@ -443,12 +454,12 @@ export async function registerDebtPayment(p: DebtPaymentInput): Promise<string> 
     if (card.kind !== 'credit_card') throw new Error('Por ahora solo se pueden abonar tarjetas de credito aqui');
     await writeRow(db, 'transactions', {
       id, account_id: p.accountId ?? null, category_id: 'cat_deudas', debt_id: p.debtId,
-      type: 'expense', amount, merchant: `Pago de ${card.name}`, note: p.note ?? null,
+      type: 'expense', amount, merchant: `Pago tarjeta · ${card.name}`, note: p.note ?? null,
       occurred_at: p.occurredAt ?? now, source: p.source ?? 'manual',
       payment_method: 'unknown', status: 'posted',
       dedupe_hash: p.dedupeHash ?? null, created_at: now, updated_at: now, deleted_at: null,
     });
-    await patchRow(db, 'debts', p.debtId, { balance: card.balance - amount });
+    await patchRow(db, 'debts', p.debtId, { balance: Math.max(0, card.balance - amount) });
     if (p.accountId) await adjustAccount(db, p.accountId, -amount);
   });
   return id;

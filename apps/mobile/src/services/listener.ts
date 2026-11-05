@@ -4,7 +4,7 @@ import { getDb } from './db';
 import { ensureListenerAlive, setSenderRules } from './listenerHealth';
 import { SENDER_RULES } from './senderRules';
 import { ingestNotification } from './notifications';
-import { notifyNow } from './reminders';
+import { notifyNow, rescheduleReminders } from './reminders';
 import { listPending } from './transactions';
 
 /**
@@ -46,12 +46,14 @@ async function processQueue(): Promise<number> {
   logIngest(`cola: ${items.length} pendiente(s)`);
   const pendingBefore = (await listPending()).length;
   let imported = 0;
+  let billSaved = false;
   const done: string[] = [];
   for (const n of items) {
     try {
       const out = await ingestNotification(n);
       logIngest(`${n.packageName}: ${out}`);
       if (out === 'imported') imported++;
+      if (out === 'bill_saved') { imported++; billSaved = true; }
       if (n.id) { done.push(n.id); attempts.delete(n.id); }
     } catch (e) {
       console.warn('No se pudo procesar una notificacion', e);
@@ -63,6 +65,7 @@ async function processQueue(): Promise<number> {
     }
   }
   NotificationListener.ack(done);
+  if (billSaved) await rescheduleReminders();
   const pendingAfter = (await listPending()).length;
   if (pendingAfter > pendingBefore) {
     await notifyNow('Compra a credito detectada', 'Abre FinZen para indicar en cuantas cuotas fue.');

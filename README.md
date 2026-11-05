@@ -69,8 +69,7 @@ Addi y Sistecrédito avisan sus compras y cuotas por WhatsApp. Si agregas `com.w
 
 ### Pagos de tarjeta de crédito
 
-Cuando llega un aviso como "Pagaste tu tarjeta de crédito Nu", FinZen lo registra como **abono a la tarjeta**: baja su saldo y queda en la categoría Deudas, no como un gasto más. La tarjeta se elige por la app: si hay una sola tarjeta cuyo proveedor o nombre coincide con la app (por ejemplo "Nu"), se abona sola. Si hay varias, el movimiento queda "por revisar".
-
+Cuando llega un aviso como "Pagaste tu tarjeta de crédito Nu", FinZen lo registra como **abono a la tarjeta**: baja su saldo, descuenta la plata de la cuenta de esa app (por ejemplo, la cuenta "Nu") y queda en la categoría Deudas, no como un gasto más. La tarjeta y la cuenta se enlazan por el nombre de la app: una tarjeta (o proveedor) llamada "Nu" y una cuenta llamada "Nu" se asocian solas con la app Nu. Si no hay una única tarjeta que calce, el aviso va a **Borradores**: al tocar "Procesar" se abre el formulario **Abono a deuda** con el monto ya puesto y solo eliges la deuda y la cuenta.
 ### SMS de facturas (experimental)
 
 Si agregas tu app de mensajes (`com.google.android.apps.messages` o `com.samsung.android.messaging`), FinZen solo lee los SMS de los remitentes permitidos (hoy, Tigo) y descarta todo lo demás sin leerlo. Un aviso como "Ya generamos tu factura de OCTUBRE ... por $19.900, límite de pago 21/11/2026" no es un gasto: se guarda como pago recurrente con su día de vencimiento y un recordatorio un día antes. La publicidad se ignora.

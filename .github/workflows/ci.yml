@@ -15,11 +15,11 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Instalar dependencias
-        run: npm ci
+        run: npm ci || npm install
 
       - name: Tests
         run: npm run test --workspaces --if-present
