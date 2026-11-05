@@ -93,6 +93,13 @@ export async function rescheduleReminders(): Promise<number> {
       const due = nextOccurrence(todayString(), c.due_day!);
       await schedule(at9(due, 2), 'Pago de tarjeta en 2 días', `${c.name}: vence el ${due}`);
     }
+    const recurring = await db.getAllAsync<{ name: string; amount: number; day_of_month: number }>(
+      'SELECT name, amount, day_of_month FROM recurring_expenses WHERE is_active=1 AND deleted_at IS NULL',
+    );
+    for (const r of recurring) {
+      const due = nextOccurrence(todayString(), r.day_of_month);
+      await schedule(at9(due, 1), 'Pago mañana', `${r.name}: ${cop(r.amount)}`);
+    }
     return count;
   } catch (e) {
     console.warn('rescheduleReminders', e);

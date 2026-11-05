@@ -11,6 +11,7 @@ import {
   setPersistentMode, setSenderBinding, type HealthSnapshot,
 } from '../src/services/listenerHealth';
 import { uid } from '../src/services/repo';
+import { SENDER_RULES } from '../src/services/senderRules';
 import { ago } from '../src/services/timeAgo';
 import { useTheme } from '../src/theme/ThemeProvider';
 
@@ -77,6 +78,9 @@ export default function NotificationSources() {
       [`user_${uid()}`, pkg, 'bank', `^${esc(pkg.toLowerCase())}$`, pkg],
     );
     await syncWhitelist(); load();
+    if (SENDER_RULES[pkg] && !isWhatsApp(pkg)) {
+      Alert.alert('Lectura limitada', `Solo se leerán mensajes de: ${SENDER_RULES[pkg]!.join(', ')}. Todo lo demás se descarta sin leerse.`);
+    }
     if (isWhatsApp(pkg)) {
       Alert.alert('WhatsApp', 'Solo se leerán chats individuales de Addi y Sistecrédito. Cualquier otro chat o grupo se descarta sin leerse.');
     }

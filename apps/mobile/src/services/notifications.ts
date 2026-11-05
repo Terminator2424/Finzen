@@ -1,14 +1,16 @@
 import { processNotification, type NotificationSource, type RawNotification } from '@finzen/core';
 import { getDb } from './db';
-import { adjustAccount, uid, writeRow } from './repo';
-import { suggestCategory } from './transactions';
+import { adjustAccount, patchRow, uid, writeRow } from './repo';
+import { rescheduleReminders } from './reminders';
+import { SMS_PACKAGES } from './senderRules';
+import { findCardsForApp, registerDebtPayment, suggestCategory } from './transactions';
 
 /**
  * Recibe una notificación cruda (de Android o del simulador), la pasa por el pipeline de
  * seguridad de @finzen/core y guarda el resultado. El texto original NO se guarda nunca:
  * solo la versión enmascarada, y nada si fue OTP o de una app fuera de la lista blanca.
  */
-export type IngestOutcome = 'imported' | 'duplicate' | 'discarded_otp' | 'discarded_not_whitelisted' | 'discarded_unparsed';
+export type IngestOutcome = 'imported' | 'duplicate' | 'discarded_otp' | 'discarded_not_whitelisted' | 'discarded_unparsed' | 'bill_saved';
 
 async function loadSources(): Promise<NotificationSource[]> {
   const db = await getDb();
@@ -63,7 +65,12 @@ export async function ingestNotification(raw: RawNotification): Promise<IngestOu
     return 'discarded_not_whitelisted';
   }
   if (result.outcome === 'discarded_otp') { await log('discarded_otp', null, null, null); return 'discarded_otp'; }
-  if (result.outcome === 'discarded_unparsed') { await log('discarded_unparsed', result.maskedText, null, null); return 'discarded_unparsed'; }
+  if (result.outcome === 'discarded_unparsed') {
+    // SMS: casi todo lo que no se entiende es publicidad; no llenamos Borradores con eso.
+    if (SMS_PACKAGES.has(raw.packageName)) return 'discarded_unparsed';
+    await log('discarded_unparsed', result.maskedText, null, null);
+    return 'discarded_unparsed';
+  }
 
   // ¿El paquete es el verdadero de esa fuente? Si no, se ignora y se deja constancia (sin texto).
   if (!(await checkBinding(db, result.sourceId, raw.packageName))) {
@@ -71,10 +78,69 @@ export async function ingestNotification(raw: RawNotification): Promise<IngestOu
     return 'discarded_not_whitelisted';
   }
 
+  if (result.outcome === 'bill') {
+    // Solo se guardan facturas de remitentes conocidos (SMS/WhatsApp); otras (p. ej. un extracto) van a Borradores.
+    if (!raw.senderKey) {
+      await log('discarded_unparsed', result.maskedText, null, null);
+      return 'discarded_unparsed';
+    }
+    const seenBill = await db.getFirstAsync<{ id: string }>('SELECT id FROM notifications_log WHERE text_hash=?', [result.dedupeHash]);
+    if (seenBill) { await log('duplicate', result.maskedText, result.dedupeHash, null); return 'duplicate'; }
+    const billName = raw.senderKey.charAt(0).toUpperCase() + raw.senderKey.slice(1);
+    const billCategory = await suggestCategory(billName);
+    const billDay = result.bill.dueDate ? Number(result.bill.dueDate.slice(8, 10)) : new Date(raw.receivedAt).getDate();
+    const billNow = Date.now();
+    await db.withTransactionAsync(async () => {
+      const existing = await db.getFirstAsync<{ id: string }>(
+        'SELECT id FROM recurring_expenses WHERE lower(name)=lower(?) AND deleted_at IS NULL', [billName],
+      );
+      if (existing) {
+        await patchRow(db, 'recurring_expenses', existing.id, { amount: result.bill.amount, day_of_month: billDay, is_active: 1 });
+      } else {
+        await writeRow(db, 'recurring_expenses', {
+          id: uid(), name: billName, amount: result.bill.amount, day_of_month: billDay, category_id: billCategory,
+          is_active: 1, created_at: billNow, updated_at: billNow, deleted_at: null,
+        });
+      }
+      await log('imported', result.maskedText, result.dedupeHash, null);
+    });
+    await rescheduleReminders();
+    return 'bill_saved';
+  }
+
   const dup = await db.getFirstAsync<{ id: string }>('SELECT id FROM transactions WHERE dedupe_hash=?', [result.dedupeHash]);
   if (dup) { await log('duplicate', result.maskedText, result.dedupeHash, dup.id); return 'duplicate'; }
 
   const p = result.parsed;
+
+  // Pago de tarjeta de credito (p. ej. Nu: "Pagaste tu tarjeta de credito"): se abona a la tarjeta de esa app.
+  if (p.isCardPayment) {
+    const cards = await findCardsForApp(raw.packageName);
+    if (cards.length === 1) {
+      const paidTx = await registerDebtPayment({
+        debtId: cards[0]!.id, amount: p.amount, occurredAt: raw.receivedAt, source: 'notification', dedupeHash: result.dedupeHash,
+      });
+      await log('imported', result.maskedText, result.dedupeHash, paidTx);
+      return 'imported';
+    }
+    if (cards.length > 1) {
+      // Varias tarjetas posibles: queda por revisar para que el usuario elija cual.
+      const reviewNow = Date.now();
+      const reviewId = uid();
+      await db.withTransactionAsync(async () => {
+        await writeRow(db, 'transactions', {
+          id: reviewId, account_id: null, category_id: 'cat_deudas', debt_id: null,
+          type: 'expense', amount: p.amount, merchant: 'Pago de tarjeta (elegir cual)',
+          note: 'Pago de tarjeta detectado: falta indicar a que tarjeta se abona.',
+          occurred_at: raw.receivedAt, source: 'notification', payment_method: 'unknown', status: 'needs_review',
+          dedupe_hash: result.dedupeHash, created_at: reviewNow, updated_at: reviewNow, deleted_at: null,
+        });
+        await log('imported', result.maskedText, result.dedupeHash, reviewId);
+      });
+      return 'imported';
+    }
+    // Sin tarjetas registradas: sigue el flujo normal (queda como pago de deuda sin tarjeta).
+  }
   const source = sources.find((s) => s.id === result.sourceId);
   const now = Date.now();
   const txId = uid();
@@ -108,6 +174,9 @@ export async function ingestNotification(raw: RawNotification): Promise<IngestOu
 
 /** Textos de ejemplo para probar el flujo completo sin esperar una notificación real. */
 export const SIMULATED_NOTIFICATIONS: { label: string; packageName: string; text: string }[] = [
+  { label: 'Nu · pago de tarjeta', packageName: 'com.nu.production', text: '¡Bravo! Pagaste tu tarjeta de crédito Nu Recibimos tu pago por $50.000. En un rato podrás verlo en tu app.' },
+  { label: 'Nequi · ingreso por Bre-B', packageName: 'com.nequi.MobileApp', text: 'Te enviaron plata por Bre-B Te enviaron $10. Entra a tu app y revisa tu saldo.' },
+  { label: 'SMS Tigo · factura', packageName: 'com.google.android.apps.messages', text: 'Ya generamos tu factura de OCTUBRE, linea 3001234567 por $19,900, limite de pago 21/11/2026. Pagala facil en b.tigo.com/XXXXXXXXXX Tigo' },
   { label: 'Tarjeta Nu · compra a cuotas', packageName: 'com.nu.production', text: 'Compra aprobada de $240.000 en ALKOSTO en 6 cuotas con tu tarjeta de crédito' },
   { label: 'Tarjeta Nu · compra sin cuotas dicho', packageName: 'com.nu.production', text: 'Compra aprobada de $85.000 en RAPPI COLOMBIA con tu tarjeta de crédito' },
   { label: 'Addi · compra', packageName: 'com.addi.app', text: 'Compraste $300.000 en Falabella con Addi' },

@@ -1,9 +1,8 @@
-name: Build Android APK
+name: Build Android APK (debug, manual)
 
+# Solo manual. Este APK es de DEBUG y se firma con otra llave que el de EAS:
+# no se puede instalar encima de uno compilado con EAS. Para publicar usa EAS (perfil preview/production).
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
@@ -17,7 +16,7 @@ jobs:
       - name: 2. Configurar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'npm'
 
       - name: 3. Configurar Java 17
@@ -27,7 +26,7 @@ jobs:
           java-version: '17'
 
       - name: 4. Instalar dependencias
-        run: npm install
+        run: npm ci
 
       - name: 5. Generar la carpeta nativa
         working-directory: ./apps/mobile
@@ -37,7 +36,6 @@ jobs:
         working-directory: ./apps/mobile/android
         run: |
           chmod +x gradlew
-          # Forzamos la arquitectura arm64-v8a y armeabi-v7a para Samsung
           ./gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
 
       - name: 7. Guardar el APK

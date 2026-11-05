@@ -9,6 +9,8 @@ export interface ParsedNotification {
   merchant: string | null;
   paymentMethod: PaymentMethod;
   isDebtPayment: boolean;
+  /** Pago de una tarjeta de credito (no de una cuota de Addi/Sistecredito). */
+  isCardPayment: boolean;
   needsInstallments: boolean;
   suggestedInstallments: number | null;
 }
@@ -82,7 +84,7 @@ export function parseNotification(
   const amount = extractAmount(maskedText);
   if (!amount) return null;
 
-  const isIncome = INCOME_RE.test(maskedText) && !/pagaste|compraste|enviaste|env[ií]o/i.test(maskedText);
+  const isIncome = INCOME_RE.test(maskedText) && !/pagaste|compraste|enviaste|transferiste|retiraste|env[ií]o/i.test(maskedText);
   const isExpense = EXPENSE_RE.test(maskedText);
   if (!isIncome && !isExpense) return null;
 
@@ -100,9 +102,10 @@ export function parseNotification(
   return {
     type,
     amount,
-    merchant: type === 'expense' ? extractMerchant(maskedText) : null,
+    merchant: type === 'expense' && !isDebtPayment ? extractMerchant(maskedText) : null,
     paymentMethod,
     isDebtPayment,
+    isCardPayment: isDebtPayment && /tarjeta/i.test(maskedText),
     needsInstallments: type === 'expense' && !isDebtPayment && (paymentMethod === 'bnpl' || paymentMethod === 'credit'),
     suggestedInstallments: suggestedInstallments && suggestedInstallments > 0 ? suggestedInstallments : null,
   };

@@ -1,5 +1,7 @@
 import { parseNotification, type ParsedNotification } from './parse';
 import { dedupeHash, isOtp, maskSensitive } from './sanitize';
+import { parseBillNotice, type BillNotice } from './bill';
+export { parseBillNotice, type BillNotice } from './bill';
 import { DEFAULT_SOURCES, matchSource, type NotificationSource } from './sources';
 
 export interface RawNotification {
@@ -19,6 +21,8 @@ export type PipelineResult =
   | { outcome: 'discarded_otp'; sourceId: string }
   /** App permitida pero formato no reconocido: se conserva el texto enmascarado para depurar. */
   | { outcome: 'discarded_unparsed'; sourceId: string; maskedText: string }
+  /** Aviso de factura por pagar (no es un gasto): se registra como pago recurrente. */
+  | { outcome: 'bill'; sourceId: string; maskedText: string; dedupeHash: string; bill: BillNotice }
   | {
       outcome: 'imported';
       sourceId: string;
@@ -55,6 +59,16 @@ export function processNotification(
 
   const maskedText = maskSensitive(combined.slice(0, MAX_INPUT)).slice(0, MAX_TEXT);
   const kind = n.senderKey && BNPL_SENDERS.has(n.senderKey) ? 'bnpl' : source.kind;
+  const bill = parseBillNotice(maskedText);
+  if (bill) {
+    return {
+      outcome: 'bill',
+      sourceId: source.id,
+      maskedText,
+      dedupeHash: dedupeHash(`${source.id}|bill|${bill.amount}|${bill.dueDate ?? ''}`),
+      bill,
+    };
+  }
   const parsed = parseNotification(maskedText, kind);
   if (!parsed) return { outcome: 'discarded_unparsed', sourceId: source.id, maskedText };
 

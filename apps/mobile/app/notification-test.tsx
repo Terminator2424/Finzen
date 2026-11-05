@@ -25,6 +25,13 @@ export default function NotificationTest() {
       Alert.alert('❌ No reconocida', `No se encontró un monto o no se entendió si es gasto o ingreso.\n\nTexto enmascarado:\n${r.maskedText}`);
       return;
     }
+    if (r.outcome === 'bill') {
+      Alert.alert(
+        '🧾 Factura por pagar',
+        `Monto: $${r.bill.amount}\nVence: ${r.bill.dueDate ?? 'sin fecha'}\nPeriodo: ${r.bill.period ?? 'no indicado'}\n\nSe registraría como pago recurrente, no como gasto.`,
+      );
+      return;
+    }
     if (r.outcome !== 'imported') return;
     const p = r.parsed;
     Alert.alert(

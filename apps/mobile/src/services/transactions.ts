@@ -100,10 +100,13 @@ export async function updateTransaction(id: string, t: NewTx): Promise<boolean> 
   
   await db.withTransactionAsync(async () => {
     const old = await db.getFirstAsync<{
-      type: TxType; amount: number; account_id: string | null; debt_id: string | null; status: TxStatus; payment_method: PaymentMethod;
-    }>('SELECT type, amount, account_id, debt_id, status, payment_method FROM transactions WHERE id=?', [id]);
+      type: TxType; amount: number; account_id: string | null; debt_id: string | null; status: TxStatus; payment_method: PaymentMethod; category_id: string | null;
+    }>('SELECT type, amount, account_id, debt_id, status, payment_method, category_id FROM transactions WHERE id=?', [id]);
     
     if (!old) { ok = false; return; }
+
+    // Los abonos a tarjeta no se editan aqui: se eliminan y se vuelven a registrar.
+    if (old.debt_id && old.category_id === 'cat_deudas') { ok = false; return; }
 
     // Si pertenece a un plan de cuotas (préstamo o BNPL), no permitir editar aquí
     const debt = old.debt_id 
@@ -222,7 +225,11 @@ export async function deleteTransaction(id: string): Promise<boolean> {
     if (debt && debt.kind !== 'credit_card') { ok = false; return; }
 
     if (tx.status === 'posted') {
-      if (debt) await patchRow(db, 'debts', tx.debt_id!, { balance: Math.max(0, debt.balance - tx.amount) });
+      if (debt && tx.category_id === 'cat_deudas') {
+        // Era un abono a la tarjeta: se devuelve la deuda y el dinero a la cuenta.
+        await patchRow(db, 'debts', tx.debt_id!, { balance: debt.balance + tx.amount });
+        if (tx.account_id) await adjustAccount(db, tx.account_id, tx.amount);
+      } else if (debt) await patchRow(db, 'debts', tx.debt_id!, { balance: Math.max(0, debt.balance - tx.amount) });
       else if (tx.account_id) await adjustAccount(db, tx.account_id, tx.type === 'expense' ? tx.amount : -tx.amount);
     }
     await softDelete(db, 'transactions', id);
@@ -380,6 +387,71 @@ export async function budgetAmounts(): Promise<Map<string, number>> {
     'SELECT category_id, amount FROM budgets WHERE deleted_at IS NULL AND month IS NULL',
   );
   return new Map(rows.map((r) => [r.category_id, r.amount]));
+}
+
+// ───────────── Abonos a tarjeta de credito ─────────────
+const GENERIC_TOKENS = new Set(['com', 'co', 'app', 'apps', 'android', 'mobile', 'mobileapp', 'production', 'prod', 'release']);
+
+/** "com.nu.production" -> ["nu"]; "com.nequi.MobileApp" -> ["nequi"]. */
+function appTokens(packageName: string): string[] {
+  return packageName.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2 && !GENERIC_TOKENS.has(t));
+}
+
+function nameMatches(tokens: string[], ...names: (string | null)[]): boolean {
+  const words = names.filter((n): n is string => !!n).join(' ').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return tokens.some((t) => words.includes(t));
+}
+
+/** Tarjetas activas cuyo proveedor o nombre coincide con la app (p. ej. app Nu -> tarjeta "Nu"). */
+export async function findCardsForApp(packageName: string): Promise<{ id: string; name: string }[]> {
+  const db = await getDb();
+  const cards = await db.getAllAsync<{ id: string; name: string; provider: string | null }>(
+    "SELECT id, name, provider FROM debts WHERE deleted_at IS NULL AND kind='credit_card' AND status='active'",
+  );
+  const tokens = appTokens(packageName);
+  return cards.filter((c) => nameMatches(tokens, c.provider, c.name)).map((c) => ({ id: c.id, name: c.name }));
+}
+
+export interface DebtPaymentInput {
+  debtId: string;
+  amount: number;
+  /** Cuenta de donde sale el dinero (opcional). */
+  accountId?: string | null;
+  occurredAt?: number;
+  source?: NewTx['source'];
+  note?: string | null;
+  dedupeHash?: string | null;
+}
+
+/**
+ * Abono a una tarjeta de credito: baja su saldo y queda como movimiento de categoria "Deudas"
+ * (monthTotals lo separa en debtPayments, asi no cuenta dos veces como gasto).
+ * Si se indica una cuenta, el dinero tambien sale de esa cuenta.
+ * Si el abono supera el saldo registrado, el saldo queda negativo (saldo a favor) para que se pueda revertir exacto.
+ */
+export async function registerDebtPayment(p: DebtPaymentInput): Promise<string> {
+  const db = await getDb();
+  const amount = Math.round(p.amount);
+  if (amount <= 0) throw new Error('El monto debe ser mayor a cero');
+  const id = uid();
+  const now = Date.now();
+  await db.withTransactionAsync(async () => {
+    const card = await db.getFirstAsync<{ balance: number; name: string; kind: string }>(
+      'SELECT balance, name, kind FROM debts WHERE id=? AND deleted_at IS NULL', [p.debtId],
+    );
+    if (!card) throw new Error('La deuda no existe');
+    if (card.kind !== 'credit_card') throw new Error('Por ahora solo se pueden abonar tarjetas de credito aqui');
+    await writeRow(db, 'transactions', {
+      id, account_id: p.accountId ?? null, category_id: 'cat_deudas', debt_id: p.debtId,
+      type: 'expense', amount, merchant: `Pago de ${card.name}`, note: p.note ?? null,
+      occurred_at: p.occurredAt ?? now, source: p.source ?? 'manual',
+      payment_method: 'unknown', status: 'posted',
+      dedupe_hash: p.dedupeHash ?? null, created_at: now, updated_at: now, deleted_at: null,
+    });
+    await patchRow(db, 'debts', p.debtId, { balance: card.balance - amount });
+    if (p.accountId) await adjustAccount(db, p.accountId, -amount);
+  });
+  return id;
 }
 
 export { addMonthKey, monthKey };

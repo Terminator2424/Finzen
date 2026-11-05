@@ -1,7 +1,8 @@
 import { AppState } from 'react-native';
 import { NotificationListener } from '../../modules/finzen-notifications';
 import { getDb } from './db';
-import { ensureListenerAlive } from './listenerHealth';
+import { ensureListenerAlive, setSenderRules } from './listenerHealth';
+import { SENDER_RULES } from './senderRules';
 import { ingestNotification } from './notifications';
 import { notifyNow } from './reminders';
 import { listPending } from './transactions';
@@ -103,6 +104,7 @@ export function startListenerBridge(onImported?: () => void): () => void {
   };
   const boot = () => {
     ensureListenerAlive().catch(() => {});
+    setSenderRules(SENDER_RULES);
     syncWhitelist().then(run).catch((e) => logIngest(`sync lista blanca ERROR: ${e instanceof Error ? e.message : String(e)}`));
   };
   boot();

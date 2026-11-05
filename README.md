@@ -57,20 +57,29 @@ La app trae la misma guía en **Lectura de notificaciones > Guía paso a paso**,
 
 | App | Estado | Notas |
 |---|---|---|
-| Nu (`com.nu.production`) | ✅ Verificada | Probado con notificaciones reales de gasto ("Enviaste $X"). |
+| Nu (`com.nu.production`) | ✅ Verificada | Probado con notificaciones reales de gasto ("Enviaste $X") y de pago de tarjeta de crédito. |
 | Nequi (`com.nequi.MobileApp`) | ✅ Verificada | Probado con ingresos por Bre-B ("Te enviaron $X"). |
 | Addi y Sistecrédito (por WhatsApp) | ✅ Verificadas | Ver la nota de WhatsApp. |
+| Tigo (SMS, por Google Messages) | 🧪 Experimental | Avisos de factura: se registran como pago recurrente con recordatorio, no como gasto. Formato verificado con un SMS real; falta la prueba en vivo. |
 | Otros bancos y billeteras | 🧪 Experimental | Se agregan con el Modo Aprendizaje. Si el formato no se reconoce, la notificación va a Borradores. Ver [Contribuir](#contribuir). |
 
 ### WhatsApp
 
 Addi y Sistecrédito avisan sus compras y cuotas por WhatsApp. Si agregas `com.whatsapp`, FinZen solo procesa **chats individuales cuyo remitente sea Addi o Sistecrédito**; los grupos y cualquier otro chat se descartan sin leerse. Como el nombre de un contacto lo puede escribir cualquiera, existe la opción **Verificar remitente**, que fija el remitente al primer chat válido y bloquea suplantaciones.
 
+### Pagos de tarjeta de crédito
+
+Cuando llega un aviso como "Pagaste tu tarjeta de crédito Nu", FinZen lo registra como **abono a la tarjeta**: baja su saldo y queda en la categoría Deudas, no como un gasto más. La tarjeta se elige por la app: si hay una sola tarjeta cuyo proveedor o nombre coincide con la app (por ejemplo "Nu"), se abona sola. Si hay varias, el movimiento queda "por revisar".
+
+### SMS de facturas (experimental)
+
+Si agregas tu app de mensajes (`com.google.android.apps.messages` o `com.samsung.android.messaging`), FinZen solo lee los SMS de los remitentes permitidos (hoy, Tigo) y descarta todo lo demás sin leerlo. Un aviso como "Ya generamos tu factura de OCTUBRE ... por $19.900, límite de pago 21/11/2026" no es un gasto: se guarda como pago recurrente con su día de vencimiento y un recordatorio un día antes. La publicidad se ignora.
+
 ### Limitaciones conocidas
 
 *   Solo Android. iOS no permite leer notificaciones de otras apps.
 *   Si una notificación no incluye el monto (algunos bancos solo avisan "tienes un movimiento"), no hay nada que interpretar.
-*   Los SMS todavía no se leen.
+*   Solo se leen SMS de una lista corta de remitentes (hoy, Tigo). El resto se descarta sin leerse.
 
 ## Arquitectura del proyecto
 
@@ -127,7 +136,6 @@ Los cambios en el módulo Kotlin requieren un APK nuevo; los cambios solo de Jav
 
 ## Hoja de ruta
 
-*   Abonar automáticamente los pagos de tarjeta a la tarjeta correcta (por app o preguntando cuál).
-*   Leer SMS de facturas y crear recordatorios de pago con fecha límite.
+*   Elegir la tarjeta desde la app cuando hay varias, y abonar también a planes de cuotas.
 *   Confirmación manual para movimientos leídos desde WhatsApp.
 *   Modo demo con datos de ejemplo.
