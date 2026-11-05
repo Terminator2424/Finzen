@@ -10,7 +10,8 @@ import {
   ensureListenerAlive, forceRebind, getHealth, openBatteryExemption, resetSenderBindings,
   setPersistentMode, setSenderBinding, type HealthSnapshot,
 } from '../src/services/listenerHealth';
-import { uid } from '../src/services/repo';
+import { getSetting, setSetting, uid } from '../src/services/repo';
+import { loadLockPrefs } from '../src/services/security';
 import { SENDER_RULES } from '../src/services/senderRules';
 import { ago } from '../src/services/timeAgo';
 import { useTheme } from '../src/theme/ThemeProvider';
@@ -28,9 +29,12 @@ export default function NotificationSources() {
   const [seen, setSeen] = useState<SeenPackage[]>([]);
   const [learning, setLearning] = useState(false);
   const [health, setHealth] = useState<HealthSnapshot | null>(null);
+  const [lockHint, setLockHint] = useState(false);
 
   const load = useCallback(async () => {
     setEnabled(NotificationListener.isEnabled());
+    const [lockPrefs, hintDismissed] = await Promise.all([loadLockPrefs(), getSetting('security_hint_dismissed')]);
+    setLockHint(!lockPrefs.enabled && hintDismissed !== '1');
     const hh = getHealth();
     setHealth(hh);
     if (hh) setLearning(hh.learningUntil > Date.now());
@@ -113,6 +117,17 @@ export default function NotificationSources() {
             </>
           )}
         </Card>
+
+        {enabled && lockHint && (
+          <Card style={{ borderColor: colors.warning }}>
+            <AppText variant="subtitle">🔐 Protege tus movimientos</AppText>
+            <AppText variant="caption" color={colors.textSecondary}>
+              FinZen va a leer notificaciones de tus bancos. Activa un PIN y la huella para que nadie más pueda abrir la app.
+            </AppText>
+            <Button label="Configurar PIN y huella" onPress={() => go('/security')} />
+            <Button variant="ghost" label="Ahora no" onPress={() => { setSetting('security_hint_dismissed', '1', 'device').catch(() => {}); setLockHint(false); }} />
+          </Card>
+        )}
 
         {h && (
           <Card style={{ borderColor: dead ? colors.warning : colors.primary }}>

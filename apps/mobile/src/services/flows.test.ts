@@ -221,6 +221,7 @@ describe('seguridad de la lectura de notificaciones', () => {
 
   it('una app impostora con nombre parecido (com.evil.nequi) se ignora tras anclar el paquete real', async () => {
     await setup();
+    await holder.db.runAsync("UPDATE notification_sources SET package_pattern='nequi' WHERE id='nequi'"); // patrón laxo: aquí se prueba el anclaje
     expect(await ingestNotification(nequi('com.nequi.MobileApp'))).toBe('imported');
     const spoof = await ingestNotification({ ...nequi('com.evil.nequi', 'Pagaste $77.000 en Estafa SAS con tu cuenta'), receivedAt: Date.now() + 120_000 });
     expect(spoof).toBe('discarded_not_whitelisted');

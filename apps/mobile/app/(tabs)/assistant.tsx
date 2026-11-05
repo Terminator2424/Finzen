@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,14 +24,26 @@ export default function Assistant() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastQ, setLastQ] = useState<string | null>(null);
   const scroll = useRef<ScrollView>(null);
 
-  const send = async (text: string) => {
+  // Al abrir el teclado, el chat baja al final para que se siga viendo lo que escribes.
+  useEffect(() => {
+    const sub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => {
+      setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 60);
+    });
+    return () => sub.remove();
+  }, []);
+
+  const send = async (text: string, isRetry = false) => {
     const q = text.trim();
     if (!q || busy) return;
-    setInput(''); setError(null); setBusy(true);
-    const history = messages;
-    setMessages([...history, { role: 'user', content: q }]);
+    setError(null); setBusy(true); setLastQ(q);
+    const history = isRetry ? messages.slice(0, -1) : messages;
+    if (!isRetry) {
+      setInput('');
+      setMessages([...history, { role: 'user', content: q }]);
+    }
     try {
       const answer = await askAssistant(q, history);
       setMessages((m) => [...m, { role: 'assistant', content: answer }]);
@@ -45,7 +57,7 @@ export default function Assistant() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 12 }}>
           <AppText variant="title">Asistente</AppText>
           <Pressable onPress={() => router.push('/assistant-settings')} hitSlop={12} accessibilityLabel="Configurar IA">
@@ -78,7 +90,16 @@ export default function Assistant() {
             </View>
           ))}
           {busy && <AppText color={colors.textSecondary}>Pensando…</AppText>}
-          {error && <AppText color={colors.danger}>{error}</AppText>}
+          {error && (
+            <View style={{ gap: 6 }}>
+              <AppText color={colors.danger}>{error}</AppText>
+              {lastQ && !busy && (
+                <Pressable onPress={() => send(lastQ, true)} hitSlop={8}>
+                  <AppText color={colors.primary}>↻ Reintentar</AppText>
+                </Pressable>
+              )}
+            </View>
+          )}
         </ScrollView>
 
         <View style={{ flexDirection: 'row', gap: 8, padding: 12, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface }}>
