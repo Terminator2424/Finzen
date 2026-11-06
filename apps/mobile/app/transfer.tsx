@@ -53,7 +53,7 @@ export default function Transfer() {
           <AppText variant="caption" color={colors.textSecondary}>
             Nu y otras apps muestran tu nombre enmascarado en los avisos. FinZen solo junta dos avisos como una transferencia entre tus cuentas si uno de ellos te nombra a ti. Así, si un amigo te envía $30.000 y tú envías $30.000 a otra persona, cada movimiento cuenta aparte. Se guarda solo en este celular.
           </AppText>
-          <Field label="Nombre completo" value={ownerName} onChangeText={setOwnerName} autoCapitalize="words" placeholder="Nombre y apellidos, como en tu cuenta" />
+          <Field label="Nombre completo" value={ownerName} onChangeText={setOwnerName} autoCapitalize="words" placeholder="Nombre completo; versión corta (opcional)" />
           <Button variant="ghost" label="Guardar nombre" onPress={saveName} />
         </Card>
 

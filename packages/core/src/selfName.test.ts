@@ -28,4 +28,13 @@ describe('mentionsPerson', () => {
   it('sin nombre guardado no reconoce a nadie', () => {
     expect(mentionsPerson('EDI***** JAV***** GON*******', '')).toBe(false);
   });
+  it('acepta varias versiones separadas por punto y coma (la corta es la de Nequi)', () => {
+    expect(mentionsPerson('EDISON GONZALEZ te envió 1, ¡lo mejor!', `${ME}; Edison Gonzalez`)).toBe(true);
+  });
+  it('la versión corta no deja pasar a otra persona', () => {
+    expect(mentionsPerson('YOJHAN CETINA te envió 1, ¡lo mejor!', `${ME}; Edison Gonzalez`)).toBe(false);
+  });
+  it('sin la versión corta, el nombre corto de Nequi no alcanza', () => {
+    expect(mentionsPerson('EDISON GONZALEZ te envió 1', ME)).toBe(false);
+  });
 });

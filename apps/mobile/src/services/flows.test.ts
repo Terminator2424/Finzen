@@ -399,3 +399,17 @@ describe('verificación de nombre en transferencias', () => {
     expect(m.expense).toBe(50_000);
   });
 });
+
+describe('nombre corto de Nequi', () => {
+  const t0 = Date.now();
+  it('"EDISON GONZALEZ te envió 50.000" verifica la transferencia desde Nu', async () => {
+    await addAccount({ name: 'Nu', kind: 'savings', balance: 500_000, currency: 'COP' });
+    await addAccount({ name: 'Nequi', kind: 'wallet', balance: 100_000, currency: 'COP' });
+    await setSetting('owner_name', 'Edison Javier Gonzalez Velosa; Edison Gonzalez', 'device');
+    await ingestNotification({ packageName: 'com.nu.production', text: 'Enviaste $50.000 Le enviaste a TUC***** CUE***** en su cuenta', receivedAt: t0 });
+    await ingestNotification({ packageName: 'com.nequi.MobileApp', text: 'EDISON GONZALEZ te envió 50.000, ¡lo mejor!', receivedAt: t0 + 30_000 });
+    const m = await monthTotals(monthKey());
+    expect(m.income).toBe(0);
+    expect(m.expense).toBe(0);
+  });
+});

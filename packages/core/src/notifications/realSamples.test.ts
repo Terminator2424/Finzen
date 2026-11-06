@@ -45,3 +45,12 @@ describe('casos sinteticos', () => {
     expect(r.parsed).toMatchObject({ type: 'expense', amount: 20_000, paymentMethod: 'debit' });
   });
 });
+
+describe('Nequi: envíos de personas (nov 2026)', () => {
+  it('"YOJHAN CETINA te envió 1" es un ingreso de 1 peso, aunque el título sea "Envío"', () => {
+    const r = run('com.nequi.MobileApp', 'Envío', 'YOJHAN CETINA te envió 1, ¡lo mejor!');
+    expect(r.outcome).toBe('imported');
+    if (r.outcome !== 'imported') return;
+    expect(r.parsed).toMatchObject({ type: 'income', amount: 1 });
+  });
+});

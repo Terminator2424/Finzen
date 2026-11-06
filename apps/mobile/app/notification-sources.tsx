@@ -3,7 +3,7 @@ import { Alert, AppState, Pressable, ScrollView, Switch, View } from 'react-nati
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NotificationListener, type SeenPackage } from '../modules/finzen-notifications';
-import { AppText, Button, Card, ScreenHeader } from '../src/components/ui';
+import { AppText, Button, Card, Field, ScreenHeader } from '../src/components/ui';
 import { getDb } from '../src/services/db';
 import { syncWhitelist } from '../src/services/listener';
 import {
@@ -30,11 +30,14 @@ export default function NotificationSources() {
   const [learning, setLearning] = useState(false);
   const [health, setHealth] = useState<HealthSnapshot | null>(null);
   const [lockHint, setLockHint] = useState(false);
+  const [needName, setNeedName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
 
   const load = useCallback(async () => {
     setEnabled(NotificationListener.isEnabled());
     const [lockPrefs, hintDismissed] = await Promise.all([loadLockPrefs(), getSetting('security_hint_dismissed')]);
     setLockHint(!lockPrefs.enabled && hintDismissed !== '1');
+    setNeedName(!(await getSetting('owner_name')));
     const hh = getHealth();
     setHealth(hh);
     if (hh) setLearning(hh.learningUntil > Date.now());
@@ -117,6 +120,18 @@ export default function NotificationSources() {
             </>
           )}
         </Card>
+
+        {enabled && needName && (
+          <Card style={{ borderColor: colors.warning }}>
+            <AppText variant="subtitle">👤 ¿Cómo apareces en tus cuentas?</AppText>
+            <AppText variant="caption" color={colors.textSecondary}>
+              Escribe tu nombre como sale en Nu y en Nequi. Si en alguna app sales con menos palabras, agrega esa versión separada por punto y coma. Así FinZen reconoce las transferencias entre tus cuentas sin confundirlas con las de otras personas. Se guarda solo en este celular.
+            </AppText>
+            <Field label="Tu nombre" value={nameInput} onChangeText={setNameInput} autoCapitalize="words" placeholder="Ej.: Juan Carlos Perez Gomez; Juan Perez" />
+            <Button label="Guardar" disabled={!nameInput.trim()} onPress={async () => { await setSetting('owner_name', nameInput.trim(), 'device'); setNeedName(false); }} />
+            <Button variant="ghost" label="Ahora no" onPress={() => setNeedName(false)} />
+          </Card>
+        )}
 
         {enabled && lockHint && (
           <Card style={{ borderColor: colors.warning }}>

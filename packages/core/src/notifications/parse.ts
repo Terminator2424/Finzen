@@ -42,7 +42,7 @@ export function parseCopAmount(raw: string): number | null {
 
 function extractAmount(text: string): number | null {
   // Añadimos "envió" (singular) y "enviaron" para capturar números sin $
-  const re = /(?:\$|\b(?:recibiste|pagaste|compraste|enviaste|env[ií]o|envi[oó]|transfiriste|monto|valor|total|por)\b)\s*(\d[\d.,]*\d|\d)/gi;
+  const re = /(?:\$|\b(?:recibiste|pagaste|compraste|enviaste|env[ií]o|envi[oó]|transfiriste|monto|valor|total|por)(?![a-záéíóúñ]))\s*(\d[\d.,]*\d|\d)/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const before = text.slice(Math.max(0, m.index - 24), m.index);
@@ -84,7 +84,7 @@ export function parseNotification(
   const amount = extractAmount(maskedText);
   if (!amount) return null;
 
-  const isIncome = INCOME_RE.test(maskedText) && !/pagaste|compraste|enviaste|transferiste|retiraste|env[ií]o/i.test(maskedText);
+  const isIncome = INCOME_RE.test(maskedText) && (/\bte\s+(?:enviaron|envi[oó])(?![a-záéíóúñ])/i.test(maskedText) || !/pagaste|compraste|enviaste|transferiste|retiraste|env[ií]o/i.test(maskedText));
   const isExpense = EXPENSE_RE.test(maskedText);
   if (!isIncome && !isExpense) return null;
 
