@@ -34,3 +34,7 @@ Thumbs.db
 
 # Gradle
 .gradle/
+
+# Volcados de contexto y respaldos (pueden contener datos privados)
+contexto.txt
+*.finzen

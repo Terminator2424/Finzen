@@ -40,7 +40,7 @@ Principios de diseño:
 *   **Los códigos y claves nunca se guardan.** Los OTP se descartan en el servicio nativo, antes de que nada llegue a JavaScript.
 *   **Nada se guarda sin enmascarar.** Tarjetas, cuentas, celulares y correos se enmascaran antes de registrar nada.
 *   **No se pierde nada si la app se cae.** La cola se cifra con una clave del Keystore y solo se borra cuando el movimiento ya está guardado.
-*   **Autorreparación.** El lector se vuelve a enlazar solo si el sistema lo suelta (al desconectarse, al abrir la app, tras reiniciar el teléfono y con un vigilante periódico).
+*   **Autorreparación.** El lector se vuelve a enlazar solo si el sistema lo suelta (al desconectarse, al abrir la app, tras reiniciar el teléfono y con un vigilante periódico). Si no logra reconectar, te avisa con una notificación.
 
 ### Activarlo, paso a paso
 
@@ -59,7 +59,7 @@ La app trae la misma guía en **Lectura de notificaciones > Guía paso a paso**,
 |---|---|---|
 | Nu (`com.nu.production`) | ✅ Verificada | Probado con notificaciones reales de gasto ("Enviaste $X") y de pago de tarjeta de crédito. |
 | Nequi (`com.nequi.MobileApp`) | ✅ Verificada | Probado con ingresos por Bre-B ("Te enviaron $X"). |
-| Addi y Sistecrédito (por WhatsApp) | ✅ Verificadas | Ver la nota de WhatsApp. |
+| Addi y Sistecrédito (por WhatsApp) | ✅ Verificadas | Compras y pago de cuotas: si hay una única cuota pendiente con ese valor, se marca como pagada. Ver la nota de WhatsApp. |
 | Tigo (SMS, por Google Messages) | 🧪 Experimental | Avisos de factura: se registran como pago recurrente con recordatorio, no como gasto. Formato verificado con un SMS real; falta la prueba en vivo. |
 | Otros bancos y billeteras | 🧪 Experimental | Se agregan con el Modo Aprendizaje. Si el formato no se reconoce, la notificación va a Borradores. Ver [Contribuir](#contribuir). |
 
@@ -79,6 +79,18 @@ Si agregas tu app de mensajes (`com.google.android.apps.messages` o `com.samsung
 *   Solo Android. iOS no permite leer notificaciones de otras apps.
 *   Si una notificación no incluye el monto (algunos bancos solo avisan "tienes un movimiento"), no hay nada que interpretar.
 *   Solo se leen SMS de una lista corta de remitentes (hoy, Tigo). El resto se descarta sin leerse.
+
+## Asistente de IA (opcional)
+
+El asistente responde preguntas sobre tus finanzas con **Gemini** (nube, nivel gratuito de Google AI Studio) o con **Ollama** (en tu PC). A cualquiera de los dos solo se le envían totales anonimizados: nunca nombres de cuentas, bancos ni comercios. La clave de Gemini se guarda en el almacén seguro del celular (Keystore), no en el repo ni en la nube.
+
+*   **Modelo automático.** Por defecto la app elige el modelo Flash más reciente disponible para tu clave y, si falla, prueba otros. Puedes fijar uno a mano; si ese modelo deja de servir, la app vuelve a automático y te avisa. Botón "Restablecer a automático".
+*   **Claves de Google.** AI Studio ahora crea claves de autorización que empiezan por `AQ.`; según la documentación de Google, las claves estándar (`AIza`) sin restricciones dejaron de aceptarse el 19 de junio de 2026 y todas las estándar se rechazan desde septiembre de 2026.
+*   **Errores claros.** "Guardar y probar" hace una llamada real y, si falla, muestra el código y el motivo que devolvió Google, con un botón para compartir ese detalle sin la clave.
+
+## Respaldos
+
+Tus datos viven solo en el celular, así que el respaldo cifrado (AES-256-GCM con contraseña) es tu único seguro si lo pierdes. FinZen guarda la fecha del último respaldo, la muestra en Ajustes y te avisa si nunca hiciste uno o si pasaron 30 días.
 
 ## Arquitectura del proyecto
 
@@ -124,6 +136,18 @@ npx eas-cli build --platform android --profile preview
 
 Los cambios en el módulo Kotlin requieren un APK nuevo; los cambios solo de JavaScript no.
 
+## Pruebas
+
+*   `packages/core`: pruebas unitarias del intérprete de notificaciones (con textos reales de Nu y Nequi, ya enmascarados), matemáticas financieras, cifrado de respaldos, validación de restauraciones y limpieza de las respuestas de la IA.
+*   `packages/db`: migraciones y restricciones del esquema contra SQLite real.
+*   `apps/mobile/src/services/flows.test.ts`: flujos de dinero de punta a punta (tarjetas, cuotas, abonos, notificaciones) con los servicios reales contra SQLite.
+*   El CI de GitHub Actions ejecuta todo esto y el typecheck en cada push.
+
+```bash
+npm run test --workspaces --if-present
+npm run typecheck --workspaces --if-present
+```
+
 ## Contribuir
 
 ### Agregar el formato de un banco
@@ -135,6 +159,12 @@ Los cambios en el módulo Kotlin requieren un APK nuevo; los cambios solo de Jav
 
 ## Hoja de ruta
 
-*   Elegir la tarjeta desde la app cuando hay varias, y abonar también a planes de cuotas.
+*   Transferencias entre tus propias cuentas (por ejemplo Nu a Nequi) sin duplicar ingresos y gastos.
+*   Confirmación con deshacer para lo que se registra solo.
+*   Modo demo con datos de ejemplo.
 *   Confirmación manual para movimientos leídos desde WhatsApp.
 *   Modo demo con datos de ejemplo.
+
+## Licencia
+
+MIT © 2026 Edison Javier Gonzalez Velosa. Ver [LICENSE](LICENSE).

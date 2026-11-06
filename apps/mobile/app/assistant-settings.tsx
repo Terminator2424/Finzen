@@ -3,7 +3,8 @@ import { ScrollView, Share, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText, Button, Card, Chip, Field, ScreenHeader } from '../src/components/ui';
 import {
-  GeminiError, getAiConfig, getGeminiKey, saveAiConfig, saveGeminiKey, testGeminiConnection, type AiConfig, type AiProvider,
+  GeminiError, cleanModelName, getAiConfig, getGeminiKey, resetGeminiModel, saveAiConfig, saveGeminiKey, testGeminiConnection,
+  type AiConfig, type AiProvider,
 } from '../src/services/ai';
 import { useTheme } from '../src/theme/ThemeProvider';
 
@@ -25,19 +26,30 @@ export default function AssistantSettings() {
   const keyHint = k
     ? `${k.length} caracteres · empieza con "${k.slice(0, 3)}"${/\s/.test(k) ? ' · ⚠ tiene espacios: copia la clave de nuevo' : ''}`
     : null;
+  const modelLine = cfg.geminiModel.trim()
+    ? `Modelo fijado: ${cleanModelName(cfg.geminiModel)}`
+    : `Modo automático${cfg.geminiCache ? ` · último modelo que funcionó: ${cfg.geminiCache}` : ''}`;
 
   const save = async () => {
     setErr(null); setTech(null); setMsg(null); setBusy(true);
     try {
+      const clean: AiConfig = { ...cfg, geminiModel: cleanModelName(cfg.geminiModel) };
       await saveGeminiKey(k);
-      await saveAiConfig(cfg);
-      if (cfg.provider === 'gemini' && k) {
-        const t = await testGeminiConnection(k, cfg.geminiModel);
-        const next = { ...cfg, geminiModel: t.model };
-        setCfg(next);
+      await saveAiConfig(clean);
+      if (clean.provider === 'gemini' && k) {
+        const t = await testGeminiConnection(k, clean.geminiModel);
+        const next: AiConfig = { ...clean, geminiCache: t.model, geminiModel: t.pinnedCleared ? '' : clean.geminiModel };
         await saveAiConfig(next);
-        setMsg(`✓ Guardado. Conexión correcta con ${t.model} (${t.ms} ms).`);
+        setCfg(next);
+        if (t.from && t.from !== t.model) {
+          setMsg(t.pinnedCleared
+            ? `⚠ El modelo "${t.from}" no sirve con tu clave (${t.reason}). Quedó en modo automático con ${t.model}.`
+            : `⚠ "${t.from}" no respondió ahora (${t.reason}). Se usó ${t.model} esta vez.`);
+        } else {
+          setMsg(`✓ Guardado. Conexión correcta con ${t.model} (${t.ms} ms)${clean.geminiModel ? '' : ' · modo automático'}.`);
+        }
       } else {
+        setCfg(clean);
         setMsg('✓ Guardado.');
       }
     } catch (e) {
@@ -46,6 +58,12 @@ export default function AssistantSettings() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const toAuto = async () => {
+    await resetGeminiModel();
+    set({ geminiModel: '', geminiCache: '' });
+    setMsg('✓ Modelo en automático. Toca "Guardar y probar" para elegir uno.');
   };
 
   // La app bloquea las capturas de pantalla: así se puede compartir el detalle del error (sin la clave).
@@ -79,7 +97,9 @@ export default function AssistantSettings() {
             <Field label="Clave de API" value={key} onChangeText={setKey} autoCapitalize="none" secureTextEntry={!showKey} placeholder="AQ.… o AIza…" />
             {keyHint && <AppText variant="caption" color={colors.textSecondary}>{keyHint}</AppText>}
             <Button variant="ghost" label={showKey ? 'Ocultar clave' : 'Mostrar clave'} onPress={() => setShowKey(!showKey)} />
-            <Field label="Modelo (vacío = elegir el Flash más reciente)" value={cfg.geminiModel} onChangeText={(t) => set({ geminiModel: t })} autoCapitalize="none" />
+            <Field label="Modelo fijado (déjalo vacío para automático)" value={cfg.geminiModel} onChangeText={(t) => set({ geminiModel: t })} autoCapitalize="none" />
+            <AppText variant="caption" color={colors.textSecondary}>{modelLine}</AppText>
+            <Button variant="ghost" label="Restablecer a automático" onPress={toAuto} />
           </Card>
         ) : (
           <Card>
@@ -94,7 +114,7 @@ export default function AssistantSettings() {
         )}
 
         <Button label={busy ? 'Probando…' : 'Guardar y probar'} onPress={save} disabled={busy} />
-        {msg && <AppText color={colors.success}>{msg}</AppText>}
+        {msg && <AppText color={msg.startsWith('✓') ? colors.success : colors.warning}>{msg}</AppText>}
         {err && (
           <>
             <AppText color={colors.danger}>{err}</AppText>

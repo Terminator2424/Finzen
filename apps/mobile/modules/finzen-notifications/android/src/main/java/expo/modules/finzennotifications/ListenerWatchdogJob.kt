@@ -6,12 +6,23 @@ import android.app.job.JobScheduler
 import android.app.job.JobService
 import android.content.ComponentName
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 
-/** Cada ~15 min comprueba que el lector siga enganchado y lo reengancha si no. Sobrevive reinicios. */
+/**
+ * Cada ~15 min comprueba que el lector siga enganchado y lo reengancha si no.
+ * Si 20 s despues sigue caido, avisa con una notificacion. Sobrevive reinicios.
+ */
 class ListenerWatchdogJob : JobService() {
   override fun onStartJob(params: JobParameters?): Boolean {
-    try { ListenerHealth.ensureBound(applicationContext) } catch (_: Throwable) {}
-    return false
+    val ctx = applicationContext
+    try { ListenerHealth.ensureBound(ctx) } catch (_: Throwable) {}
+    // El sistema tarda unos segundos en volver a enlazar el servicio: se comprueba despues.
+    Handler(Looper.getMainLooper()).postDelayed({
+      try { ListenerHealth.alertIfDead(ctx) } catch (_: Throwable) {}
+      params?.let { jobFinished(it, false) }
+    }, 20_000L)
+    return true
   }
 
   override fun onStopJob(params: JobParameters?): Boolean = false

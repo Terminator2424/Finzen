@@ -8,15 +8,20 @@ import { listBudgetLines, monthTotals, spendingByCategory } from './transactions
 
 /**
  * Asistente de IA. Dos proveedores, ambos opcionales:
- *  - Gemini (API gratuita de Google AI Studio): funciona desde el celular en cualquier parte.
- *  - Ollama: IA local en tu PC (necesita la PC encendida y en la misma red). El único uso de la PC.
+ *  - Gemini (API gratuita de Google AI Studio).
+ *  - Ollama: IA local en tu PC.
  * A cualquiera de los dos solo se le envían totales anonimizados (ver @finzen/core/ai.ts).
  * La clave de Gemini vive en SecureStore (Keystore de Android), nunca en el repo ni en la nube.
+ *
+ * Modelo de Gemini: hay DOS valores distintos.
+ *  - ai_gemini_model: el que el usuario FIJÓ a mano. Vacío = automático. La app nunca lo rellena sola.
+ *  - ai_gemini_cache: el último que funcionó en automático (solo se muestra, se revalida si falla).
  */
 export type AiProvider = 'gemini' | 'ollama';
 export interface AiConfig {
   provider: AiProvider;
-  geminiModel: string; // '' = elegir automáticamente
+  geminiModel: string;
+  geminiCache?: string;
   ollamaUrl: string;
   ollamaModel: string;
 }
@@ -24,22 +29,30 @@ export interface AiConfig {
 const GEMINI_KEY = 'finzen_gemini_key';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
+const FORMAT_RULES =
+  '\n\nFormato de la respuesta: texto plano para un chat en el celular. No uses asteriscos, almohadillas (#), tablas ni código. ' +
+  'Párrafos de máximo 3 frases. Si necesitas una lista, usa líneas que empiecen con "- " o con "1.", "2.". ' +
+  'Responde en menos de 120 palabras, salvo que te pidan más detalle. Escribe los montos como $1.250.000.';
+const systemPrompt = () => aiSystemPrompt() + FORMAT_RULES;
+
+/** Quita espacios, caracteres invisibles y el prefijo "models/" que se cuelan al copiar y pegar. */
+export function cleanModelName(s: string): string {
+  return s.replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, '').replace(/^models\//i, '');
+}
+
 export async function getAiConfig(): Promise<AiConfig> {
-  const [provider, geminiModel, ollamaUrl, ollamaModel] = await Promise.all(
-    ['ai_provider', 'ai_gemini_model', 'ai_ollama_url', 'ai_ollama_model'].map(getSetting),
+  const [provider, geminiModel, ollamaUrl, ollamaModel, geminiCache] = await Promise.all(
+    ['ai_provider', 'ai_gemini_model', 'ai_ollama_url', 'ai_ollama_model', 'ai_gemini_cache'].map(getSetting),
   );
   return {
     provider: provider === 'ollama' ? 'ollama' : 'gemini',
     geminiModel: geminiModel ?? '',
+    geminiCache: geminiCache ?? '',
     ollamaUrl: ollamaUrl ?? '',
     ollamaModel: ollamaModel ?? 'llama3.2',
   };
 }
 
-/**
- * Ollama solo por HTTPS: el tráfico HTTP en claro está bloqueado en toda la app (así nadie en tu WiFi
- * puede leer lo que se envía). Para tu PC usa un túnel/proxy con HTTPS (p. ej. Tailscale Serve o Caddy).
- */
 function assertSafeOllamaUrl(url: string) {
   if (url && !/^https:\/\/[^\s/]+/i.test(url)) {
     throw new Error('Por seguridad la dirección de Ollama debe empezar por https:// (el tráfico sin cifrar está bloqueado).');
@@ -49,9 +62,15 @@ function assertSafeOllamaUrl(url: string) {
 export async function saveAiConfig(c: AiConfig): Promise<void> {
   assertSafeOllamaUrl(c.ollamaUrl.trim());
   await setSetting('ai_provider', c.provider, 'device');
-  await setSetting('ai_gemini_model', c.geminiModel.trim(), 'device');
+  await setSetting('ai_gemini_model', cleanModelName(c.geminiModel), 'device');
   await setSetting('ai_ollama_url', c.ollamaUrl.trim().replace(/\/+$/, ''), 'device');
   await setSetting('ai_ollama_model', c.ollamaModel.trim() || 'llama3.2', 'device');
+}
+
+/** Vuelve al modo automático: borra el modelo fijado y el recordado. */
+export async function resetGeminiModel(): Promise<void> {
+  await setSetting('ai_gemini_model', '', 'device');
+  await setSetting('ai_gemini_cache', '', 'device');
 }
 
 export const clearGeminiKey = () => SecureStore.deleteItemAsync(GEMINI_KEY);
@@ -100,8 +119,6 @@ async function timedFetch(url: string, init: RequestInit, ms = 60_000): Promise<
 }
 
 // ───────────── Gemini ─────────────
-
-/** Error de la API de Gemini, con el detalle exacto que devolvió Google. */
 export class GeminiError extends Error {
   status: number;
   googleStatus: string;
@@ -125,21 +142,11 @@ function friendlyGeminiMessage(status: number, googleStatus: string, reason: str
   if (status === 400 && /api key/i.test(detail)) {
     return `Google dice que la clave de API no es válida ${tech}. Copia de nuevo la clave completa desde aistudio.google.com/apikey. Las claves antiguas "AIza" sin restricciones dejaron de funcionar el 19 de junio de 2026, y las estándar dejan de funcionar en septiembre de 2026.`;
   }
-  if (status === 401) {
-    return `Google rechazó la clave de API ${tech}. Crea una clave nueva en aistudio.google.com/apikey y pégala en ⚙ Configurar IA.`;
-  }
-  if (status === 403) {
-    return `Google no permite usar esta clave con Gemini ${tech}. Revisa que la clave sea de Gemini (AI Studio) y que no esté restringida a otro servicio.`;
-  }
-  if (status === 404) {
-    return `El modelo configurado ya no existe en Gemini ${tech}. FinZen elige otro solo: vuelve a intentar.`;
-  }
-  if (status === 429) {
-    return `Llegaste al límite gratuito de uso de Gemini ${tech}. Espera un minuto (o hasta mañana si es el límite diario).`;
-  }
-  if (status >= 500) {
-    return `Gemini está saturado o con fallas ${tech}. Es temporal: intenta de nuevo en unos segundos.`;
-  }
+  if (status === 401) return `Google rechazó la clave de API ${tech}. Crea una clave nueva en aistudio.google.com/apikey y pégala en ⚙ Configurar IA.`;
+  if (status === 403) return `Google no permite usar esta clave o este modelo con Gemini ${tech}. Revisa que la clave sea de Gemini (AI Studio) y que no esté restringida a otro servicio.`;
+  if (status === 404) return `El modelo configurado no existe para tu clave ${tech}. FinZen prueba con otro solo.`;
+  if (status === 429) return `Llegaste al límite gratuito de uso de Gemini ${tech}. Espera un minuto (o hasta mañana si es el límite diario).`;
+  if (status >= 500) return `Gemini está saturado o con fallas ${tech}. Es temporal: intenta de nuevo en unos segundos.`;
   return `Gemini respondió ${status}: ${detail || 'error'} ${tech}`;
 }
 
@@ -163,7 +170,6 @@ async function geminiFetch(path: string, key: string, init: RequestInit, ms = 60
   return res;
 }
 
-/** Errores temporales del servidor: vale la pena reintentar o probar otro modelo. */
 const TRANSIENT = [500, 502, 503, 504];
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -180,6 +186,15 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
   throw last;
 }
 
+/** Fallos de la CLAVE (no del modelo): probar otro modelo no sirve de nada. */
+function isKeyProblem(e: GeminiError): boolean {
+  return e.status === 401 || e.reason === 'ACCESS_TOKEN_TYPE_UNSUPPORTED' || e.reason === 'API_KEY_INVALID'
+    || (e.status === 400 && /api key/i.test(e.detail))
+    || (e.status === 403 && /unregistered callers|api key|identity/i.test(e.detail));
+}
+/** El modelo en sí no sirve para esta clave (retirado, mal escrito, no disponible): conviene soltarlo. */
+const isHard = (s: number | null) => s === 400 || s === 403 || s === 404;
+
 function modelVersion(name: string): [number, number] {
   const m = /^gemini-(\d+)(?:\.(\d+))?-/.exec(name);
   return m ? [Number(m[1]), Number(m[2] ?? 0)] : [0, 0];
@@ -190,7 +205,7 @@ const newestFirst = (a: string, b: string) => {
   return b1 - a1 || b2 - a2;
 };
 
-/** Modelos Flash disponibles para la clave, del más nuevo al más viejo (primero Flash y luego Flash-Lite). */
+/** Modelos disponibles para la clave: Flash del más nuevo al más viejo, luego Flash-Lite y los alias "-latest". */
 export async function geminiCandidates(key: string): Promise<string[]> {
   const res = await withRetry(() => geminiFetch('/models?pageSize=200', key, { method: 'GET' }, 20_000));
   const data = (await res.json()) as { models?: { name: string; supportedGenerationMethods?: string[] }[] };
@@ -199,38 +214,77 @@ export async function geminiCandidates(key: string): Promise<string[]> {
     .map((m) => m.name.replace(/^models\//, ''));
   const flash = names.filter((n) => /^gemini-[\d.]+-flash$/.test(n)).sort(newestFirst);
   const lite = names.filter((n) => /^gemini-[\d.]+-flash-lite$/.test(n)).sort(newestFirst);
-  return [...flash, ...lite];
+  const aliases = names.filter((n) => n === 'gemini-flash-latest' || n === 'gemini-flash-lite-latest');
+  return [...flash, ...lite, ...aliases];
 }
 
-/** Elige el modelo "flash" más reciente disponible para la clave (los nombres cambian con el tiempo). */
 export async function discoverGeminiModel(key: string): Promise<string> {
   const c = await geminiCandidates(key);
   if (!c[0]) throw new Error('No encontré un modelo Gemini Flash disponible para tu clave.');
   return c[0];
 }
 
-export interface GeminiTest { model: string; ms: number; candidates: string[] }
+interface Run<T> { value: T; model: string; from: string | null; fromStatus: number | null; reason: string | null }
 
-/** Prueba REAL de la clave: lista los modelos y hace una llamada mínima con uno. */
-export async function testGeminiConnection(key: string, preferred: string): Promise<GeminiTest> {
-  const t0 = Date.now();
-  const candidates = await geminiCandidates(key);
-  const order = preferred && candidates.includes(preferred) ? [preferred, ...candidates.filter((c) => c !== preferred)] : candidates;
-  if (order.length === 0) throw new Error('No encontré un modelo Gemini Flash disponible para tu clave.');
-  let last: unknown;
-  for (const model of order.slice(0, 3)) {
-    try {
-      await withRetry(() => geminiFetch(`/models/${encodeURIComponent(model)}:generateContent`, key, {
-        method: 'POST',
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Responde solo: ok' }] }], generationConfig: { maxOutputTokens: 8 } }),
-      }, 30_000), 2);
-      return { model, ms: Date.now() - t0, candidates };
-    } catch (e) {
-      last = e;
-      if (!(e instanceof GeminiError) || (e.status !== 404 && !TRANSIENT.includes(e.status))) throw e;
+/**
+ * Prueba primero el modelo fijado (o el último que funcionó) y, si falla por algo que no es la clave,
+ * recorre los modelos disponibles. Devuelve cuál funcionó y por qué se descartó el primero.
+ */
+async function withModelFallback<T>(
+  key: string, pinned: string, cached: string, op: (model: string, tries: number) => Promise<T>,
+): Promise<Run<T>> {
+  const first = pinned || cached;
+  let firstErr: GeminiError | null = null;
+  if (first) {
+    try { return { value: await op(first, 3), model: first, from: null, fromStatus: null, reason: null }; }
+    catch (e) {
+      if (!(e instanceof GeminiError) || isKeyProblem(e)) throw e;
+      firstErr = e;
     }
   }
-  throw last;
+  const candidates = (await geminiCandidates(key)).filter((m) => m !== first);
+  let lastErr: unknown = firstErr;
+  for (const m of candidates.slice(0, 3)) {
+    try {
+      const value = await op(m, 1);
+      return {
+        value, model: m, from: first || null, fromStatus: firstErr?.status ?? null,
+        reason: firstErr ? `HTTP ${firstErr.status}${firstErr.googleStatus ? ` ${firstErr.googleStatus}` : ''}` : null,
+      };
+    } catch (e) {
+      lastErr = e;
+      if (!(e instanceof GeminiError) || isKeyProblem(e)) throw e;
+    }
+  }
+  throw lastErr ?? new Error('No encontré un modelo Gemini Flash disponible para tu clave.');
+}
+
+async function pingGemini(key: string, model: string, tries: number): Promise<void> {
+  await withRetry(() => geminiFetch(`/models/${encodeURIComponent(model)}:generateContent`, key, {
+    method: 'POST',
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Responde solo: ok' }] }], generationConfig: { maxOutputTokens: 8 } }),
+  }, 30_000), tries);
+}
+
+export interface GeminiTest {
+  model: string;
+  ms: number;
+  /** Modelo que se intentó primero y falló (null si funcionó a la primera). */
+  from: string | null;
+  reason: string | null;
+  /** El modelo fijado no sirve para esta clave: el campo vuelve a automático. */
+  pinnedCleared: boolean;
+}
+
+/** Prueba REAL de la clave y del modelo. Solo deja guardado lo que la prueba validó. */
+export async function testGeminiConnection(key: string, pinnedRaw: string): Promise<GeminiTest> {
+  const t0 = Date.now();
+  const pinned = cleanModelName(pinnedRaw);
+  const cached = (await getSetting('ai_gemini_cache')) ?? '';
+  const run = await withModelFallback(key, pinned, cached, (m, tries) => pingGemini(key, m, tries));
+  await setSetting('ai_gemini_cache', run.model, 'device');
+  const pinnedCleared = !!pinned && run.from === pinned && isHard(run.fromStatus);
+  return { model: run.model, ms: Date.now() - t0, from: run.from, reason: run.reason, pinnedCleared };
 }
 
 async function generateGemini(key: string, model: string, history: ChatMessage[], turn: string, tries: number): Promise<string> {
@@ -240,7 +294,7 @@ async function generateGemini(key: string, model: string, history: ChatMessage[]
   ];
   const res = await withRetry(() => geminiFetch(`/models/${encodeURIComponent(model)}:generateContent`, key, {
     method: 'POST',
-    body: JSON.stringify({ systemInstruction: { parts: [{ text: aiSystemPrompt() }] }, contents, generationConfig: { temperature: 0.4 } }),
+    body: JSON.stringify({ systemInstruction: { parts: [{ text: systemPrompt() }] }, contents, generationConfig: { temperature: 0.4 } }),
   }), tries);
   const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
   const text = j.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('').trim();
@@ -251,30 +305,11 @@ async function generateGemini(key: string, model: string, history: ChatMessage[]
 async function askGemini(cfg: AiConfig, history: ChatMessage[], turn: string): Promise<string> {
   const key = await getGeminiKey();
   if (!key) throw new Error('Falta la clave de Gemini (Asistente → ⚙).');
-  let model = cfg.geminiModel;
-  if (!model) {
-    model = await discoverGeminiModel(key);
-    await setSetting('ai_gemini_model', model, 'device');
-  }
-  try {
-    return await generateGemini(key, model, history, turn, 3);
-  } catch (e) {
-    // El modelo guardado pudo haberse retirado (404) o seguir saturado (5xx): se prueba con otros disponibles.
-    if (!(e instanceof GeminiError) || (e.status !== 404 && !TRANSIENT.includes(e.status))) throw e;
-    if (e.status === 404) await setSetting('ai_gemini_model', '', 'device');
-    let others: string[] = [];
-    try { others = (await geminiCandidates(key)).filter((m) => m !== model); } catch { throw e; }
-    for (const alt of others.slice(0, 2)) {
-      try {
-        const out = await generateGemini(key, alt, history, turn, 1);
-        if (e.status === 404) await setSetting('ai_gemini_model', alt, 'device');
-        return out;
-      } catch (e2) {
-        if (!(e2 instanceof GeminiError) || (e2.status !== 404 && !TRANSIENT.includes(e2.status))) throw e2;
-      }
-    }
-    throw e;
-  }
+  const pinned = cleanModelName(cfg.geminiModel);
+  const run = await withModelFallback(key, pinned, cfg.geminiCache ?? '', (m, tries) => generateGemini(key, m, history, turn, tries));
+  await setSetting('ai_gemini_cache', run.model, 'device');
+  if (pinned && run.from === pinned && isHard(run.fromStatus)) await setSetting('ai_gemini_model', '', 'device');
+  return run.value;
 }
 
 // ───────────── Ollama ─────────────
@@ -285,7 +320,7 @@ async function askOllama(cfg: AiConfig, history: ChatMessage[], turn: string): P
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: cfg.ollamaModel, stream: false,
-      messages: [{ role: 'system', content: aiSystemPrompt() }, ...history, { role: 'user', content: turn }],
+      messages: [{ role: 'system', content: systemPrompt() }, ...history, { role: 'user', content: turn }],
     }),
   }, 120_000);
   if (!res.ok) throw new Error(`Ollama respondió ${res.status}. ¿Descargaste el modelo "${cfg.ollamaModel}"? (ollama pull ${cfg.ollamaModel})`);

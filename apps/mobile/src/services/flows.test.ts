@@ -295,3 +295,32 @@ describe('pago de tarjeta por notificación', () => {
     expect(log[0].masked_text).toContain('Recibimos tu pago');
   });
 });
+
+describe('pago de cuota por notificación', () => {
+  const t0 = Math.floor(Date.now() / 60_000) * 60_000;
+  const money = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const plan = (name: string) => createInstallmentPurchase(
+    { type: 'expense', amount: 300_000, merchant: name, categoryId: 'cat_compras', paymentMethod: 'bnpl' },
+    { name, provider: 'Addi', parentDebtId: null, installments: 3, mode: { kind: 'zero', feePerInstallment: 0 }, firstDueDate: FIRST_DUE },
+  );
+
+  it('marca la cuota como pagada, baja el saldo del plan y no se duplica', async () => {
+    await setup();
+    const r = await plan('Falabella');
+    const insts = await getInstallments(r.planId);
+    const n = { packageName: 'com.addi.app', text: `Pagaste tu cuota de $${money(insts[0]!.total)} en Addi`, receivedAt: t0 };
+    expect(await ingestNotification(n)).toBe('imported');
+    expect((await getInstallments(r.planId))[0]!.paid_at).not.toBeNull();
+    expect((await getDebt(r.planId))!.balance).toBe(300_000 - insts[0]!.principal);
+    expect(await ingestNotification({ ...n, receivedAt: t0 + 5_000 })).toBe('duplicate');
+  });
+
+  it('con dos cuotas del mismo valor no adivina: va a Borradores', async () => {
+    await setup();
+    const a = await plan('A');
+    await plan('B');
+    const total = (await getInstallments(a.planId))[0]!.total;
+    const out = await ingestNotification({ packageName: 'com.addi.app', text: `Pagaste tu cuota de $${money(total)} en Addi`, receivedAt: t0 });
+    expect(out).toBe('discarded_unparsed');
+  });
+});

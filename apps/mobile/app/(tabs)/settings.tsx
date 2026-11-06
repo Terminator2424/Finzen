@@ -7,6 +7,7 @@ import { NotificationListener } from '../../modules/finzen-notifications';
 import { AppText, Card, Chip, InfoRow } from '../../src/components/ui';
 import { useFocusData } from '../../src/hooks/useFocusData';
 import { getDb, isDbEncrypted } from '../../src/services/db';
+import { getSetting } from '../../src/services/repo';
 import { isSignedIn, lastSyncAt, pendingCount } from '../../src/services/sync';
 import { PALETTES, type ModePreference, type PaletteId } from '../../src/theme/palettes';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -24,16 +25,24 @@ async function diagnostics() {
     queue: await pendingCount(),
     tx: await q('SELECT COUNT(*) AS n FROM transactions WHERE deleted_at IS NULL'),
     synced: await isSignedIn(),
+    lastBackup: Number((await getSetting('last_backup_at')) ?? 0) || null,
     last,
     encrypted: isDbEncrypted(),
     listener: NotificationListener.available ? (NotificationListener.isEnabled() ? 'Activado' : 'Desactivado') : 'No disponible en esta versión',
   };
 }
 
+function backupHint(last: number | null): string {
+  if (!last) return '⚠ Nunca hiciste un respaldo. Si pierdes el celular, pierdes tus datos.';
+  const days = Math.floor((Date.now() - last) / 86_400_000);
+  if (days >= 30) return `⚠ Tu último respaldo fue hace ${days} días. Haz uno nuevo.`;
+  return `Último respaldo: hace ${days === 0 ? 'menos de un día' : `${days} día(s)`}.`;
+}
+
 export default function Settings() {
   const { colors, paletteId, mode, setPalette, setMode } = useTheme();
   const router = useRouter();
-  const [diag] = useFocusData(diagnostics, { version: 0, queue: 0, tx: 0, synced: false, last: null as number | null, listener: '—', encrypted: true });
+  const [diag] = useFocusData(diagnostics, { version: 0, queue: 0, tx: 0, synced: false, last: null as number | null, lastBackup: null as number | null, listener: '—', encrypted: true });
 
   const link = (label: string, path: string, hint?: string) => (
     <Pressable key={path} onPress={() => router.push(path as Href)} style={{ paddingVertical: 8 }}>
@@ -80,7 +89,7 @@ export default function Settings() {
         <Card>
           <AppText variant="subtitle">Seguridad y datos</AppText>
           {link('Bloqueo con huella y PIN', '/security')}
-          {link('Exportar, importar y borrar datos', '/data')}
+          {link('Exportar, importar y borrar datos', '/data', backupHint(diag.lastBackup))}
           {link('Sincronización en la nube (opcional)', '/sync', diag.synced ? 'Conectada' : 'Desconectada: tus datos solo están en este celular.')}
           {link('Configurar IA del asistente', '/assistant-settings')}
         </Card>

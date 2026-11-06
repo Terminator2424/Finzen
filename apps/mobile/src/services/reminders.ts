@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { nextOccurrence, todayString } from '@finzen/core';
 import { getDb } from './db';
+import { getSetting } from './repo';
 
 const CHANNEL = 'finzen-recordatorios';
 
@@ -100,6 +101,12 @@ export async function rescheduleReminders(): Promise<number> {
       const due = nextOccurrence(todayString(), r.day_of_month);
       await schedule(at9(due, 1), 'Pago mañana', `${r.name}: ${cop(r.amount)}`);
     }
+    // Respaldo cifrado: 30 días después del último (o en 7 días si nunca hiciste uno). Si ya se pasó, mañana.
+    const lastBackup = Number((await getSetting('last_backup_at')) ?? 0);
+    let backupDue = new Date(lastBackup ? lastBackup + 30 * 86_400_000 : now + 7 * 86_400_000);
+    if (backupDue.getTime() <= now) backupDue = new Date(now + 86_400_000);
+    backupDue.setHours(9, 0, 0, 0);
+    await schedule(backupDue, 'Haz un respaldo cifrado', 'Tus datos viven solo en este celular. Exporta un respaldo cifrado desde Ajustes.');
     return count;
   } catch (e) {
     console.warn('rescheduleReminders', e);

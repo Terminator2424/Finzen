@@ -13,7 +13,7 @@ import { getDb } from './db';
 import { clearPin } from './security';
 import { clearSyncCredentials } from './sync';
 import { suggestCategory } from './transactions';
-import { uid } from './repo';
+import { setSetting, uid } from './repo';
 
 /**
  * Exportar / importar / restaurar / borrar. Todo local: el usuario es dueño de sus datos.
@@ -89,6 +89,7 @@ export async function exportBackupJson(passphrase: string): Promise<void> {
   const plain = JSON.stringify({ app: 'finzen', version: BACKUP_VERSION, exportedAt: new Date().toISOString(), tables });
   const enc = await encryptBackup(plain, passphrase, (n) => Crypto.getRandomBytes(n));
   await shareText(`finzen-respaldo-${new Date().toISOString().slice(0, 10)}.finzen`, enc, 'application/json');
+  await setSetting('last_backup_at', String(Date.now()), 'device');
 }
 
 /** Restaura una copia REEMPLAZANDO los datos actuales. Valida todo antes de borrar nada. */

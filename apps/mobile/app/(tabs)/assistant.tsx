@@ -1,13 +1,35 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { ChatMessage } from '@finzen/core';
+import { parseAiText, type ChatMessage } from '@finzen/core';
 import { AppText, Card, Chip } from '../../src/components/ui';
 import { useFocusData } from '../../src/hooks/useFocusData';
 import { askAssistant, isAiConfigured } from '../../src/services/ai';
 import { useTheme } from '../../src/theme/ThemeProvider';
+
+/** Muestra la respuesta de la IA sin símbolos de Markdown: negrilla real, viñetas y párrafos cortos. */
+function AiMessage({ text, color }: { text: string; color: string }) {
+  const blocks = parseAiText(text);
+  return (
+    <View style={{ gap: 6 }}>
+      {blocks.map((b, i) => (
+        <View key={i} style={{ flexDirection: 'row', gap: 6 }}>
+          {b.kind === 'bullet' && <AppText color={color}>•</AppText>}
+          {b.kind === 'number' && <AppText color={color}>{b.n}.</AppText>}
+          <View style={{ flex: 1 }}>
+            <AppText color={color}>
+              {b.spans.map((s, j) => (s.bold || b.kind === 'heading'
+                ? <Text key={j} style={{ fontWeight: '700' }}>{s.text}</Text>
+                : <Text key={j}>{s.text}</Text>))}
+            </AppText>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
 
 const SUGGESTIONS = [
   '¿Cuánto gasté en comida este mes?',
@@ -85,7 +107,7 @@ export default function Assistant() {
           {messages.map((m, i) => (
             <View key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '88%' }}>
               <Card style={{ backgroundColor: m.role === 'user' ? colors.primary : colors.surface, borderColor: m.role === 'user' ? colors.primary : colors.border }}>
-                <AppText color={m.role === 'user' ? colors.onPrimary : colors.text}>{m.content}</AppText>
+                {m.role === 'user' ? <AppText color={colors.onPrimary}>{m.content}</AppText> : <AiMessage text={m.content} color={colors.text} />}
               </Card>
             </View>
           ))}

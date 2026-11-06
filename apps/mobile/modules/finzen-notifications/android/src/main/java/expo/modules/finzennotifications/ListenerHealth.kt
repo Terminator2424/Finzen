@@ -22,7 +22,7 @@ object ListenerHealth {
   private fun p(ctx: Context): SharedPreferences = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
   private fun stamp(ctx: Context, key: String) { p(ctx).edit().putLong(key, System.currentTimeMillis()).apply() }
 
-  fun markConnected(ctx: Context) { connected = true; stamp(ctx, "last_connected") }
+  fun markConnected(ctx: Context) { connected = true; stamp(ctx, "last_connected"); clearAlert(ctx) }
   fun markDisconnected(ctx: Context) { connected = false; stamp(ctx, "last_disconnected") }
   fun markEvent(ctx: Context) { stamp(ctx, "last_event") }
   fun markQueued(ctx: Context) { stamp(ctx, "last_queued") }
@@ -100,6 +100,58 @@ object ListenerHealth {
   }
 
   fun traceJson(ctx: Context): String = p(ctx).getString("trace", "[]") ?: "[]"
+
+  private const val ALERT_CHANNEL = "finzen_alerts"
+  private const val ALERT_ID = 1002
+  private const val ALERT_EVERY_MS = 12L * 60L * 60L * 1000L
+
+  fun clearAlert(ctx: Context) {
+    try { NotificationManagerCompat.from(ctx).cancel(ALERT_ID) } catch (_: Throwable) {}
+  }
+
+  /**
+   * Si el lector sigue caido, avisa (una vez cada 12 h). Se llama desde el vigilante, DESPUES de intentar reenganchar.
+   * Solo avisa si el lector ya funciono alguna vez (si nunca se configuro, no hay nada que avisar).
+   */
+  fun alertIfDead(ctx: Context) {
+    val enabled = isEnabled(ctx)
+    if (enabled && connected) { clearAlert(ctx); return }
+    val sp = p(ctx)
+    if (sp.getLong("last_connected", 0L) == 0L) return
+    val now = System.currentTimeMillis()
+    if (now - sp.getLong("last_alert", 0L) < ALERT_EVERY_MS) return
+    try {
+      val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        nm.createNotificationChannel(
+          android.app.NotificationChannel(ALERT_CHANNEL, "Avisos del lector", android.app.NotificationManager.IMPORTANCE_DEFAULT)
+        )
+      }
+      val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
+      val pi = if (launch != null) {
+        android.app.PendingIntent.getActivity(
+          ctx, 0, launch, android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+      } else null
+      val text = if (enabled) {
+        "FinZen dej\u00f3 de leer tus notificaciones. \u00c1brela para reconectar el lector."
+      } else {
+        "El acceso a las notificaciones est\u00e1 desactivado. \u00c1brela para volver a activarlo."
+      }
+      val n = androidx.core.app.NotificationCompat.Builder(ctx, ALERT_CHANNEL)
+        .setSmallIcon(android.R.drawable.stat_notify_error)
+        .setContentTitle("FinZen no est\u00e1 leyendo")
+        .setContentText(text)
+        .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(text))
+        .setAutoCancel(true)
+        .setContentIntent(pi)
+        .build()
+      nm.notify(ALERT_ID, n)
+      sp.edit().putLong("last_alert", now).apply()
+    } catch (t: Throwable) {
+      recordError(ctx, "alert:" + t.javaClass.simpleName)
+    }
+  }
 
   fun snapshot(ctx: Context): String {
     val sp = p(ctx)

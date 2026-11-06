@@ -12,3 +12,5 @@ export * from './voice';
 export * from './ai';
 export * from './backupCrypto';
 export * from './restore';
+
+export * from './aiFormat';
