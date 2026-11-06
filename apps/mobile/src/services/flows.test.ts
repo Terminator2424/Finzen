@@ -47,7 +47,7 @@ import { cardSummary, createDebt, deleteDebt, getDebt, getInstallments, listPlan
 import { ingestNotification } from './notifications';
 import { addAccount, getNetWorth, listAccounts } from './repo';
 import {
-  createInstallmentPurchase, createTransaction, deleteTransaction, listPending, monthTotals,
+  createInstallmentPurchase, createTransaction, createTransfer, deleteTransaction, listPending, monthTotals,
   resolvePendingWithPlan, spendingByCategory,
 } from './transactions';
 import { monthKey } from '@finzen/core';
@@ -322,5 +322,50 @@ describe('pago de cuota por notificación', () => {
     const total = (await getInstallments(a.planId))[0]!.total;
     const out = await ingestNotification({ packageName: 'com.addi.app', text: `Pagaste tu cuota de $${money(total)} en Addi`, receivedAt: t0 });
     expect(out).toBe('discarded_unparsed');
+  });
+});
+
+describe('transferencias entre mis cuentas', () => {
+  const t0 = Date.now();
+  const nuTxt = (n: string) => ({ packageName: 'com.nu.production', text: `Enviaste $${n} Le enviaste a EDI***** JAV***** en su cuenta` });
+  const nequiTxt = (n: string) => ({ packageName: 'com.nequi.MobileApp', text: `Te enviaron plata por Bre-B Te enviaron $${n}. Entra a tu app y revisa tu saldo.` });
+  const byName = async (name: string) => (await listAccounts()).find((a) => a.name === name)!;
+  async function dosCuentas() {
+    await addAccount({ name: 'Nu', kind: 'savings', balance: 500_000, currency: 'COP' });
+    await addAccount({ name: 'Nequi', kind: 'wallet', balance: 100_000, currency: 'COP' });
+  }
+
+  it('Nu → Nequi: se empareja, mueve los saldos y no cuenta como ingreso ni gasto', async () => {
+    await dosCuentas();
+    expect(await ingestNotification({ ...nuTxt('50.000'), receivedAt: t0 })).toBe('imported');
+    expect(await ingestNotification({ ...nequiTxt('50.000'), receivedAt: t0 + 20_000 })).toBe('imported');
+    expect((await byName('Nu')).balance).toBe(450_000);
+    expect((await byName('Nequi')).balance).toBe(150_000);
+    const m = await monthTotals(monthKey());
+    expect(m.income).toBe(0);
+    expect(m.expense).toBe(0);
+    expect(await spendingByCategory(monthKey())).toHaveLength(0);
+  });
+
+  it('con montos distintos no se emparejan', async () => {
+    await dosCuentas();
+    await ingestNotification({ ...nuTxt('50.000'), receivedAt: t0 });
+    await ingestNotification({ ...nequiTxt('40.000'), receivedAt: t0 + 20_000 });
+    const m = await monthTotals(monthKey());
+    expect(m.expense).toBe(50_000);
+    expect(m.income).toBe(40_000);
+  });
+
+  it('transferencia manual: mueve los saldos y borrar una mitad borra las dos', async () => {
+    await dosCuentas();
+    await createTransfer((await byName('Nu')).id, (await byName('Nequi')).id, 30_000);
+    expect((await byName('Nu')).balance).toBe(470_000);
+    expect((await byName('Nequi')).balance).toBe(130_000);
+    const db = holder.db as any;
+    const [leg] = await db.getAllAsync("SELECT id FROM transactions WHERE category_id='cat_transferencia'");
+    expect(await deleteTransaction(leg.id)).toBe(true);
+    expect((await byName('Nu')).balance).toBe(500_000);
+    expect((await byName('Nequi')).balance).toBe(100_000);
+    expect(await db.getAllAsync('SELECT id FROM transactions WHERE deleted_at IS NULL')).toHaveLength(0);
   });
 });

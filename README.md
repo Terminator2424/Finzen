@@ -70,6 +70,11 @@ Addi y Sistecrédito avisan sus compras y cuotas por WhatsApp. Si agregas `com.w
 ### Pagos de tarjeta de crédito
 
 Cuando llega un aviso como "Pagaste tu tarjeta de crédito Nu", FinZen lo registra como **abono a la tarjeta**: baja su saldo, descuenta la plata de la cuenta de esa app (por ejemplo, la cuenta "Nu") y queda en la categoría Deudas, no como un gasto más. La tarjeta y la cuenta se enlazan por el nombre de la app: una tarjeta (o proveedor) llamada "Nu" y una cuenta llamada "Nu" se asocian solas con la app Nu. Si no hay una única tarjeta que calce, el aviso va a **Borradores**: al tocar "Procesar" se abre el formulario **Abono a deuda** con el monto ya puesto y solo eliges la deuda y la cuenta.
+### Transferencias entre tus propias cuentas
+
+Si mueves plata entre dos cuentas tuyas (por ejemplo de Nu a Nequi), cada app avisa por separado: Nu un gasto y Nequi un ingreso. FinZen empareja las dos notificaciones cuando tienen el mismo monto, son de cuentas distintas y llegan con menos de 10 minutos de diferencia, y las guarda como una **transferencia**: los saldos cambian, pero no cuenta como ingreso ni como gasto del mes. Si hay más de una pareja posible, no adivina. También puedes registrar una transferencia a mano en Ajustes → Transferir entre mis cuentas, y al borrar una mitad se borran las dos.
+
+Limitación: si alguien te envía justo el mismo monto que acabas de mandar desde otra de tus cuentas, dentro de esos 10 minutos, las dos notificaciones se emparejarían por error.
 ### SMS de facturas (experimental)
 
 Si agregas tu app de mensajes (`com.google.android.apps.messages` o `com.samsung.android.messaging`), FinZen solo lee los SMS de los remitentes permitidos (hoy, Tigo) y descarta todo lo demás sin leerlo. Un aviso como "Ya generamos tu factura de OCTUBRE ... por $19.900, límite de pago 21/11/2026" no es un gasto: se guarda como pago recurrente con su día de vencimiento y un recordatorio un día antes. La publicidad se ignora.
@@ -159,7 +164,6 @@ npm run typecheck --workspaces --if-present
 
 ## Hoja de ruta
 
-*   Transferencias entre tus propias cuentas (por ejemplo Nu a Nequi) sin duplicar ingresos y gastos.
 *   Confirmación con deshacer para lo que se registra solo.
 *   Modo demo con datos de ejemplo.
 *   Confirmación manual para movimientos leídos desde WhatsApp.

@@ -1,7 +1,7 @@
 import { addMonthKey, categorize, monthKey, monthRange, type CategoryRule } from '@finzen/core';
 import { getDb } from './db';
 import { insertPlan, type PlanParams } from './debts';
-import { adjustAccount, patchRow, softDelete, uid, writeRow, getOrCreateDefaultAccount } from './repo';
+import { adjustAccount, patchRow, softDelete, uid, writeRow, getOrCreateDefaultAccount, type Db } from './repo';
 
 export type TxType = 'expense' | 'income';
 export type PaymentMethod = 'cash' | 'debit' | 'credit' | 'bnpl' | 'unknown';
@@ -107,6 +107,7 @@ export async function updateTransaction(id: string, t: NewTx): Promise<boolean> 
 
     // Los abonos a tarjeta no se editan aqui: se eliminan y se vuelven a registrar.
     if (old.debt_id && old.category_id === 'cat_deudas') { ok = false; return; }
+    if (isTransferCategory(old.category_id)) { ok = false; return; } // las transferencias no se editan: se borran y se vuelven a hacer
 
     // Si pertenece a un plan de cuotas (préstamo o BNPL), no permitir editar aquí
     const debt = old.debt_id 
@@ -215,24 +216,37 @@ export async function deleteTransaction(id: string): Promise<boolean> {
   const db = await getDb();
   let ok = true;
   await db.withTransactionAsync(async () => {
-    const tx = await db.getFirstAsync<{
-      type: TxType; amount: number; account_id: string | null; debt_id: string | null; status: TxStatus; category_id: string | null;
-    }>('SELECT type,amount,account_id,debt_id,status,category_id FROM transactions WHERE id=?', [id]);
-    if (!tx) return;
-    const debt = tx.debt_id
-      ? await db.getFirstAsync<{ kind: string; balance: number }>('SELECT kind,balance FROM debts WHERE id=?', [tx.debt_id])
-      : null;
-    if (debt && debt.kind !== 'credit_card') { ok = false; return; }
-
-    if (tx.status === 'posted') {
-      if (debt && tx.category_id === 'cat_deudas') {
-        // Era un abono a la tarjeta: se devuelve la deuda y el dinero a la cuenta.
-        await patchRow(db, 'debts', tx.debt_id!, { balance: debt.balance + tx.amount });
-        if (tx.account_id) await adjustAccount(db, tx.account_id, tx.amount);
-      } else if (debt) await patchRow(db, 'debts', tx.debt_id!, { balance: Math.max(0, debt.balance - tx.amount) });
-      else if (tx.account_id) await adjustAccount(db, tx.account_id, tx.type === 'expense' ? tx.amount : -tx.amount);
+    const ids = [id];
+    const head = await db.getFirstAsync<{ note: string | null; category_id: string | null }>(
+      'SELECT note, category_id FROM transactions WHERE id=? AND deleted_at IS NULL', [id],
+    );
+    if (head && isTransferCategory(head.category_id)) {
+      const peer = peerOf(head.note);
+      if (peer) ids.push(peer); // una transferencia se borra completa: las dos mitades
     }
-    await softDelete(db, 'transactions', id);
+    for (const txId of ids) {
+      const tx = await db.getFirstAsync<{
+        type: TxType; amount: number; account_id: string | null; debt_id: string | null; status: TxStatus; category_id: string | null;
+      }>('SELECT type,amount,account_id,debt_id,status,category_id FROM transactions WHERE id=? AND deleted_at IS NULL', [txId]);
+      if (!tx) continue;
+      const debt = tx.debt_id
+        ? await db.getFirstAsync<{ kind: string; balance: number }>('SELECT kind,balance FROM debts WHERE id=?', [tx.debt_id])
+        : null;
+      if (debt && debt.kind !== 'credit_card') { ok = false; return; }
+
+      if (tx.status === 'posted') {
+        if (debt && tx.category_id === 'cat_deudas') {
+          // Era un abono a la tarjeta: se devuelve la deuda y el dinero a la cuenta.
+          await patchRow(db, 'debts', tx.debt_id!, { balance: debt.balance + tx.amount });
+          if (tx.account_id) await adjustAccount(db, tx.account_id, tx.amount);
+        } else if (debt) {
+          await patchRow(db, 'debts', tx.debt_id!, { balance: Math.max(0, debt.balance - tx.amount) });
+        } else if (tx.account_id) {
+          await adjustAccount(db, tx.account_id, tx.type === 'expense' ? tx.amount : -tx.amount);
+        }
+      }
+      await softDelete(db, 'transactions', txId);
+    }
   });
   return ok;
 }
@@ -281,6 +295,7 @@ export async function monthTotals(month: string): Promise<MonthTotals> {
   );
   const out: MonthTotals = { income: 0, expense: 0, debtPayments: 0 };
   for (const r of rows) {
+    if (r.cat === 'cat_transferencia' || r.cat === 'cat_transferencia_in') continue; // entre tus propias cuentas: ni ingreso ni gasto
     if (r.type === 'income') out.income += r.s;
     else if (r.cat === 'cat_deudas') out.debtPayments += r.s;
     else out.expense += r.s;
@@ -302,7 +317,7 @@ export async function spendingByCategory(month: string): Promise<CategorySpend[]
        LEFT JOIN categories c ON c.id = t.category_id
        LEFT JOIN categories p ON p.id = c.parent_id
       WHERE t.deleted_at IS NULL AND t.status='posted' AND t.type='expense'
-        AND COALESCE(t.category_id,'') <> 'cat_deudas'
+        AND COALESCE(t.category_id,'') NOT IN ('cat_deudas','cat_transferencia')
         AND t.occurred_at >= ? AND t.occurred_at < ?
       GROUP BY 1,2 ORDER BY total DESC`,
     [start, end],
@@ -314,7 +329,7 @@ export interface Category { id: string; name: string; parent_id: string | null; 
 
 export async function listCategories(): Promise<Category[]> {
   const db = await getDb();
-  return db.getAllAsync<Category>('SELECT id,name,parent_id,kind FROM categories WHERE deleted_at IS NULL ORDER BY parent_id IS NOT NULL, name');
+  return db.getAllAsync<Category>('SELECT id,name,parent_id,kind FROM categories WHERE deleted_at IS NULL AND id NOT IN (\'cat_transferencia\',\'cat_transferencia_in\') ORDER BY parent_id IS NOT NULL, name');
 }
 
 export interface RuleRow extends CategoryRule { id: string }
@@ -463,6 +478,87 @@ export async function registerDebtPayment(p: DebtPaymentInput): Promise<string> 
     if (p.accountId) await adjustAccount(db, p.accountId, -amount);
   });
   return id;
+}
+
+// ───────────── Transferencias entre tus propias cuentas ─────────────
+/**
+ * Una transferencia (Nu → Nequi) se guarda como DOS movimientos enlazados: una salida (tipo gasto) en la
+ * cuenta de origen y una entrada (tipo ingreso) en la de destino, ambos en una categoría especial.
+ * Así los saldos se mueven con la lógica de siempre, pero los reportes no los cuentan como ingreso ni gasto.
+ * El enlace va en la nota ("par:<id del otro movimiento>"), sin tocar el esquema de la base.
+ */
+const TRANSFER_OUT = 'cat_transferencia';
+const TRANSFER_IN = 'cat_transferencia_in';
+const PAIR_WINDOW_MS = 10 * 60_000;
+export const isTransferCategory = (id: string | null | undefined) => id === TRANSFER_OUT || id === TRANSFER_IN;
+const pairNote = (peerId: string) => `Transferencia entre tus cuentas · par:${peerId}`;
+const peerOf = (note: string | null | undefined) => /par:([A-Za-z0-9_-]+)/.exec(note ?? '')?.[1] ?? null;
+
+async function markTransferLeg(db: Db, id: string, dir: 'out' | 'in', otherName: string, peerId: string) {
+  await patchRow(db, 'transactions', id, {
+    category_id: dir === 'out' ? TRANSFER_OUT : TRANSFER_IN,
+    merchant: dir === 'out' ? `Transferencia a ${otherName}` : `Transferencia de ${otherName}`,
+    note: pairNote(peerId),
+  });
+}
+
+/**
+ * Si el movimiento recién guardado es la otra mitad de una transferencia (mismo monto, sentido contrario,
+ * otra cuenta tuya, menos de 10 min de diferencia, venido de una notificación), marca las dos como transferencia.
+ * Con 0 o varias parejas posibles no hace nada: no se adivina. Dentro de una transacción abierta.
+ */
+export async function tryPairTransfer(
+  db: Db, t: { id: string; type: TxType; amount: number; accountId: string; at: number },
+): Promise<boolean> {
+  const opposite = t.type === 'expense' ? 'income' : 'expense';
+  const cands = await db.getAllAsync<{ id: string; account_id: string }>(
+    `SELECT id, account_id FROM transactions
+      WHERE deleted_at IS NULL AND status='posted' AND source='notification' AND type=? AND amount=?
+        AND account_id IS NOT NULL AND account_id <> ? AND id <> ? AND debt_id IS NULL
+        AND COALESCE(category_id,'') NOT IN ('cat_transferencia','cat_transferencia_in','cat_deudas')
+        AND ABS(occurred_at - ?) <= ?`,
+    [opposite, t.amount, t.accountId, t.id, t.at, PAIR_WINDOW_MS],
+  );
+  if (cands.length !== 1) return false;
+  const peer = cands[0]!;
+  const accs = await db.getAllAsync<{ id: string; name: string }>('SELECT id, name FROM accounts WHERE id IN (?, ?)', [t.accountId, peer.account_id]);
+  const nameOf = (accountId: string) => accs.find((a) => a.id === accountId)?.name ?? 'otra cuenta';
+  const outId = t.type === 'expense' ? t.id : peer.id;
+  const inId = t.type === 'expense' ? peer.id : t.id;
+  const outAcc = t.type === 'expense' ? t.accountId : peer.account_id;
+  const inAcc = t.type === 'expense' ? peer.account_id : t.accountId;
+  await markTransferLeg(db, outId, 'out', nameOf(inAcc), inId);
+  await markTransferLeg(db, inId, 'in', nameOf(outAcc), outId);
+  return true;
+}
+
+/** Transferencia manual entre dos cuentas tuyas. */
+export async function createTransfer(fromId: string, toId: string, amount: number, occurredAt?: number): Promise<void> {
+  const value = Math.round(amount);
+  if (value <= 0) throw new Error('El monto debe ser mayor a cero');
+  if (fromId === toId) throw new Error('Elige dos cuentas distintas');
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    const accs = await db.getAllAsync<{ id: string; name: string }>(
+      'SELECT id, name FROM accounts WHERE id IN (?, ?) AND deleted_at IS NULL', [fromId, toId],
+    );
+    const from = accs.find((a) => a.id === fromId);
+    const to = accs.find((a) => a.id === toId);
+    if (!from || !to) throw new Error('No se encontró una de las cuentas');
+    const at = occurredAt ?? Date.now();
+    const now = Date.now();
+    const outId = uid();
+    const inId = uid();
+    const leg = (id: string, accountId: string, type: 'expense' | 'income', catId: string, merchant: string, peerId: string) => ({
+      id, account_id: accountId, category_id: catId, debt_id: null, type, amount: value, merchant, note: pairNote(peerId),
+      occurred_at: at, source: 'manual', payment_method: 'unknown', status: 'posted', dedupe_hash: null,
+      created_at: now, updated_at: now, deleted_at: null,
+    });
+    await writeRow(db, 'transactions', leg(outId, from.id, 'expense', TRANSFER_OUT, `Transferencia a ${to.name}`, inId));
+    await writeRow(db, 'transactions', leg(inId, to.id, 'income', TRANSFER_IN, `Transferencia de ${from.name}`, outId));
+    await adjustAccount(db, from.id, -value);
+    await adjustAccount(db, to.id, value);
+  });
 }
 
 export { addMonthKey, monthKey };

@@ -3,7 +3,7 @@ import { getDb } from './db';
 import { adjustAccount, patchRow, uid, writeRow } from './repo';
 import { SMS_PACKAGES } from './senderRules';
 import { payInstallment } from './debts';
-import { findAccountForApp, findCardsForApp, registerDebtPayment, suggestCategory } from './transactions';
+import { findAccountForApp, findCardsForApp, registerDebtPayment, suggestCategory, tryPairTransfer } from './transactions';
 
 /**
  * Recibe una notificación cruda (de Android o del simulador), la pasa por el pipeline de
@@ -181,7 +181,11 @@ export async function ingestNotification(raw: RawNotification): Promise<IngestOu
       payment_method: p.paymentMethod, status, dedupe_hash: result.dedupeHash,
       created_at: now, updated_at: now, deleted_at: null,
     });
-    if (status === 'posted' && accountId) await adjustAccount(db, accountId, p.type === 'expense' ? -p.amount : p.amount);
+    if (status === 'posted' && accountId) {
+      await adjustAccount(db, accountId, p.type === 'expense' ? -p.amount : p.amount);
+      // ¿Es la otra mitad de una transferencia entre tus propias cuentas (Nu ⇄ Nequi)?
+      await tryPairTransfer(db, { id: txId, type: p.type, amount: p.amount, accountId, at: raw.receivedAt });
+    }
     await log('imported', result.maskedText, result.dedupeHash, txId);
   });
   return 'imported';

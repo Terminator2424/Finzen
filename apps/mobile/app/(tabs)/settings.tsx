@@ -81,6 +81,7 @@ export default function Settings() {
         <Card>
           <AppText variant="subtitle">Finanzas</AppText>
           {link('Cuentas y activos', '/accounts')}
+          {link('Transferir entre mis cuentas', '/transfer')}
           {link('Presupuestos mensuales', '/budgets')}
           {link('Gastos fijos y suscripciones', '/recurring')}
           {link('Escanear un recibo', '/scan')}
