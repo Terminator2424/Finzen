@@ -45,7 +45,7 @@ async function freshDb() {
 
 import { cardSummary, createDebt, deleteDebt, getDebt, getInstallments, listPlansOf, payCard, payInstallment } from './debts';
 import { ingestNotification } from './notifications';
-import { addAccount, getNetWorth, listAccounts } from './repo';
+import { addAccount, getNetWorth, listAccounts, setSetting } from './repo';
 import {
   createInstallmentPurchase, createTransaction, createTransfer, deleteTransaction, listPending, monthTotals,
   resolvePendingWithPlan, spendingByCategory,
@@ -327,10 +327,11 @@ describe('pago de cuota por notificación', () => {
 
 describe('transferencias entre mis cuentas', () => {
   const t0 = Date.now();
-  const nuTxt = (n: string) => ({ packageName: 'com.nu.production', text: `Enviaste $${n} Le enviaste a EDI***** JAV***** en su cuenta` });
+  const nuTxt = (n: string) => ({ packageName: 'com.nu.production', text: `Enviaste $${n} Le enviaste a EDI***** JAV***** GON******* VEL***** en su cuenta` });
   const nequiTxt = (n: string) => ({ packageName: 'com.nequi.MobileApp', text: `Te enviaron plata por Bre-B Te enviaron $${n}. Entra a tu app y revisa tu saldo.` });
   const byName = async (name: string) => (await listAccounts()).find((a) => a.name === name)!;
   async function dosCuentas() {
+    await setSetting('owner_name', 'Edison Javier Gonzalez Velosa', 'device');
     await addAccount({ name: 'Nu', kind: 'savings', balance: 500_000, currency: 'COP' });
     await addAccount({ name: 'Nequi', kind: 'wallet', balance: 100_000, currency: 'COP' });
   }
@@ -367,5 +368,34 @@ describe('transferencias entre mis cuentas', () => {
     expect((await byName('Nu')).balance).toBe(500_000);
     expect((await byName('Nequi')).balance).toBe(100_000);
     expect(await db.getAllAsync('SELECT id FROM transactions WHERE deleted_at IS NULL')).toHaveLength(0);
+  });
+});
+
+describe('verificación de nombre en transferencias', () => {
+  const t0 = Date.now();
+  const nequiIn = (n: string) => ({ packageName: 'com.nequi.MobileApp', text: `Te enviaron plata por Bre-B Te enviaron $${n}. Entra a tu app y revisa tu saldo.` });
+  const nuOut = (n: string, who: string) => ({ packageName: 'com.nu.production', text: `Enviaste $${n} Le enviaste a ${who} en su cuenta` });
+  async function cuentas() {
+    await addAccount({ name: 'Nu', kind: 'savings', balance: 500_000, currency: 'COP' });
+    await addAccount({ name: 'Nequi', kind: 'wallet', balance: 100_000, currency: 'COP' });
+  }
+
+  it('un amigo te envía y tú envías lo mismo a otra persona: NO es una transferencia', async () => {
+    await cuentas();
+    await setSetting('owner_name', 'Edison Javier Gonzalez Velosa', 'device');
+    await ingestNotification({ ...nequiIn('30.000'), receivedAt: t0 });
+    await ingestNotification({ ...nuOut('30.000', 'MAR***** CAM***** LOP***** RUI*****'), receivedAt: t0 + 60_000 });
+    const m = await monthTotals(monthKey());
+    expect(m.income).toBe(30_000);
+    expect(m.expense).toBe(30_000);
+  });
+
+  it('sin nombre guardado no se empareja solo', async () => {
+    await cuentas();
+    await ingestNotification({ ...nuOut('50.000', 'EDI***** JAV***** GON******* VEL*****'), receivedAt: t0 });
+    await ingestNotification({ ...nequiIn('50.000'), receivedAt: t0 + 20_000 });
+    const m = await monthTotals(monthKey());
+    expect(m.income).toBe(50_000);
+    expect(m.expense).toBe(50_000);
   });
 });

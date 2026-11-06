@@ -14,3 +14,5 @@ export * from './backupCrypto';
 export * from './restore';
 
 export * from './aiFormat';
+
+export * from './selfName';

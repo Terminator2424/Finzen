@@ -2,6 +2,7 @@ import { addMonthKey, categorize, monthKey, monthRange, type CategoryRule } from
 import { getDb } from './db';
 import { insertPlan, type PlanParams } from './debts';
 import { adjustAccount, patchRow, softDelete, uid, writeRow, getOrCreateDefaultAccount, type Db } from './repo';
+import { mentionsPerson } from '@finzen/core';
 
 export type TxType = 'expense' | 'income';
 export type PaymentMethod = 'cash' | 'debit' | 'credit' | 'bnpl' | 'unknown';
@@ -508,7 +509,7 @@ async function markTransferLeg(db: Db, id: string, dir: 'out' | 'in', otherName:
  * Con 0 o varias parejas posibles no hace nada: no se adivina. Dentro de una transacción abierta.
  */
 export async function tryPairTransfer(
-  db: Db, t: { id: string; type: TxType; amount: number; accountId: string; at: number },
+  db: Db, t: { id: string; type: TxType; amount: number; accountId: string; at: number; text: string; selfName: string | null },
 ): Promise<boolean> {
   const opposite = t.type === 'expense' ? 'income' : 'expense';
   const cands = await db.getAllAsync<{ id: string; account_id: string }>(
@@ -520,6 +521,14 @@ export async function tryPairTransfer(
     [opposite, t.amount, t.accountId, t.id, t.at, PAIR_WINDOW_MS],
   );
   if (cands.length !== 1) return false;
+  // Verificación de nombre: solo se empareja si el aviso de alguna de las dos mitades nombra a la propia persona
+  // (Nu pone tu nombre enmascarado: "EDI***** JAV*****"). Sin tu nombre guardado no se empareja solo.
+  if (!t.selfName) return false;
+  const peerLog = await db.getFirstAsync<{ masked_text: string | null }>(
+    'SELECT masked_text FROM notifications_log WHERE transaction_id=? AND masked_text IS NOT NULL ORDER BY received_at DESC LIMIT 1',
+    [cands[0]!.id],
+  );
+  if (!mentionsPerson(t.text, t.selfName) && !mentionsPerson(peerLog?.masked_text ?? '', t.selfName)) return false;
   const peer = cands[0]!;
   const accs = await db.getAllAsync<{ id: string; name: string }>('SELECT id, name FROM accounts WHERE id IN (?, ?)', [t.accountId, peer.account_id]);
   const nameOf = (accountId: string) => accs.find((a) => a.id === accountId)?.name ?? 'otra cuenta';

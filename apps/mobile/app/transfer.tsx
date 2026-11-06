@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AppText, Button, Card, Chip, MoneyField, ScreenHeader } from '../src/components/ui';
+import { AppText, Button, Card, Chip, Field, MoneyField, ScreenHeader } from '../src/components/ui';
 import { useFocusData } from '../src/hooks/useFocusData';
-import { listAccounts } from '../src/services/repo';
+import { getSetting, listAccounts, setSetting } from '../src/services/repo';
 import { createTransfer } from '../src/services/transactions';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { formatCOP, parseDigits } from '../src/utils/format';
@@ -17,6 +17,12 @@ export default function Transfer() {
   const [to, setTo] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [saving, setSaving] = useState(false);
+  const [ownerName, setOwnerName] = useState('');
+  useEffect(() => { getSetting('owner_name').then((n) => setOwnerName(n ?? '')); }, []);
+  const saveName = async () => {
+    await setSetting('owner_name', ownerName.trim(), 'device');
+    Alert.alert('Listo', ownerName.trim() ? 'Nombre guardado en este celular.' : 'Nombre borrado: las transferencias ya no se emparejan solas.');
+  };
   const value = parseDigits(amount);
   const ready = !!from && !!to && from !== to && value > 0;
   const nameOf = (id: string | null) => accounts.find((a) => a.id === id)?.name ?? '…';
@@ -41,6 +47,15 @@ export default function Transfer() {
         <AppText color={colors.textSecondary}>
           Mueve plata entre dos cuentas tuyas. Los saldos cambian, pero no cuenta como ingreso ni como gasto del mes.
         </AppText>
+
+        <Card>
+          <AppText variant="subtitle">Mi nombre</AppText>
+          <AppText variant="caption" color={colors.textSecondary}>
+            Nu y otras apps muestran tu nombre enmascarado en los avisos. FinZen solo junta dos avisos como una transferencia entre tus cuentas si uno de ellos te nombra a ti. Así, si un amigo te envía $30.000 y tú envías $30.000 a otra persona, cada movimiento cuenta aparte. Se guarda solo en este celular.
+          </AppText>
+          <Field label="Nombre completo" value={ownerName} onChangeText={setOwnerName} autoCapitalize="words" placeholder="Nombre y apellidos, como en tu cuenta" />
+          <Button variant="ghost" label="Guardar nombre" onPress={saveName} />
+        </Card>
 
         {accounts.length < 2 ? (
           <Card><AppText color={colors.warning}>Necesitas al menos dos cuentas. Créalas en Ajustes → Cuentas y activos.</AppText></Card>

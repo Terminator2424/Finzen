@@ -1,6 +1,6 @@
 import { processNotification, type NotificationSource, type RawNotification } from '@finzen/core';
 import { getDb } from './db';
-import { adjustAccount, patchRow, uid, writeRow } from './repo';
+import { adjustAccount, getSetting, patchRow, uid, writeRow } from './repo';
 import { SMS_PACKAGES } from './senderRules';
 import { payInstallment } from './debts';
 import { findAccountForApp, findCardsForApp, registerDebtPayment, suggestCategory, tryPairTransfer } from './transactions';
@@ -184,7 +184,7 @@ export async function ingestNotification(raw: RawNotification): Promise<IngestOu
     if (status === 'posted' && accountId) {
       await adjustAccount(db, accountId, p.type === 'expense' ? -p.amount : p.amount);
       // ¿Es la otra mitad de una transferencia entre tus propias cuentas (Nu ⇄ Nequi)?
-      await tryPairTransfer(db, { id: txId, type: p.type, amount: p.amount, accountId, at: raw.receivedAt });
+      await tryPairTransfer(db, { id: txId, type: p.type, amount: p.amount, accountId, at: raw.receivedAt, text: result.maskedText, selfName: (await getSetting('owner_name')) ?? null });
     }
     await log('imported', result.maskedText, result.dedupeHash, txId);
   });

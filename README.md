@@ -74,7 +74,7 @@ Cuando llega un aviso como "Pagaste tu tarjeta de crédito Nu", FinZen lo regist
 
 Si mueves plata entre dos cuentas tuyas (por ejemplo de Nu a Nequi), cada app avisa por separado: Nu un gasto y Nequi un ingreso. FinZen empareja las dos notificaciones cuando tienen el mismo monto, son de cuentas distintas y llegan con menos de 10 minutos de diferencia, y las guarda como una **transferencia**: los saldos cambian, pero no cuenta como ingreso ni como gasto del mes. Si hay más de una pareja posible, no adivina. También puedes registrar una transferencia a mano en Ajustes → Transferir entre mis cuentas, y al borrar una mitad se borran las dos.
 
-Limitación: si alguien te envía justo el mismo monto que acabas de mandar desde otra de tus cuentas, dentro de esos 10 minutos, las dos notificaciones se emparejarían por error.
+Verificación de nombre: para no confundir movimientos distintos (por ejemplo, un amigo te envía $30.000 y tú envías $30.000 a otra persona), solo se empareja si el aviso de alguna de las dos mitades te nombra a ti. Nu muestra tu nombre enmascarado (`EDI***** JAV*****`) y FinZen lo compara con el nombre que guardas en Ajustes → Transferir entre mis cuentas (solo en el celular, no se sincroniza). Sin nombre guardado no se empareja solo: usa la transferencia manual.
 ### SMS de facturas (experimental)
 
 Si agregas tu app de mensajes (`com.google.android.apps.messages` o `com.samsung.android.messaging`), FinZen solo lee los SMS de los remitentes permitidos (hoy, Tigo) y descarta todo lo demás sin leerlo. Un aviso como "Ya generamos tu factura de OCTUBRE ... por $19.900, límite de pago 21/11/2026" no es un gasto: se guarda como pago recurrente con su día de vencimiento y un recordatorio un día antes. La publicidad se ignora.
