@@ -97,6 +97,10 @@ El asistente responde preguntas sobre tus finanzas con **Gemini** (nube, nivel g
 
 Tus datos viven solo en el celular, así que el respaldo cifrado (AES-256-GCM con contraseña) es tu único seguro si lo pierdes. FinZen guarda la fecha del último respaldo, la muestra en Ajustes y te avisa si nunca hiciste uno o si pasaron 30 días.
 
+## Me deben (cuentas por cobrar)
+
+Anota quién te debe plata, cuánto y cuándo te paga (Ajustes → Me deben). Cada cobro muestra lo que falta, una barra de progreso y la fecha de pago (en rojo si ya venció), admite pagos parciales y te avisa el día en que te toca cobrar. Mientras no te paguen, lo que te deben cuenta como un activo en tu patrimonio. No cambia el saldo de tus cuentas: el dinero entra y sale por las notificaciones o los movimientos de siempre, así no se cuenta dos veces. Los nombres se guardan solo en el celular y no se envían a la IA.
+
 ## Arquitectura del proyecto
 
 Monorepo con NPM Workspaces:

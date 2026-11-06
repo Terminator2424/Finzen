@@ -107,6 +107,12 @@ export async function rescheduleReminders(): Promise<number> {
     if (backupDue.getTime() <= now) backupDue = new Date(now + 86_400_000);
     backupDue.setHours(9, 0, 0, 0);
     await schedule(backupDue, 'Haz un respaldo cifrado', 'Tus datos viven solo en este celular. Exporta un respaldo cifrado desde Ajustes.');
+    // Cobros: el día en que te toca cobrar, un aviso con quién y cuánto.
+    const owed = await db.getAllAsync<{ debtor: string; amount: number; paid: number; due_date: string }>(
+      'SELECT debtor, amount, paid, due_date FROM receivables WHERE deleted_at IS NULL AND amount > paid AND due_date IS NOT NULL AND due_date >= ?',
+      [todayString()],
+    );
+    for (const o of owed) await schedule(at9(o.due_date, 0), 'Hoy te toca cobrar', `${o.debtor} te debe ${cop(o.amount - o.paid)}`);
     return count;
   } catch (e) {
     console.warn('rescheduleReminders', e);

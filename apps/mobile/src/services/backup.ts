@@ -109,6 +109,7 @@ export async function restoreBackup(fileText: string, passphrase?: string): Prom
   let total = 0;
   await db.withTransactionAsync(async () => {
     await db.execAsync('PRAGMA defer_foreign_keys = ON');
+    await db.execAsync('DELETE FROM receivable_payments; DELETE FROM receivables;');
     for (const t of [...USER_TABLES].reverse()) await db.runAsync(`DELETE FROM ${t}`);
     await db.runAsync('DELETE FROM net_worth_snapshots');
     await db.runAsync("DELETE FROM settings WHERE scope='user'");
@@ -202,6 +203,7 @@ export async function wipeAllData(): Promise<void> {
   const db = await getDb();
   await db.withTransactionAsync(async () => {
     await db.execAsync('PRAGMA defer_foreign_keys = ON');
+    await db.execAsync('DELETE FROM receivable_payments; DELETE FROM receivables;');
     for (const t of [...USER_TABLES].reverse()) await db.runAsync(`DELETE FROM ${t}`);
     for (const t of ['net_worth_snapshots', 'sync_queue', 'notifications_log', 'settings']) await db.runAsync(`DELETE FROM ${t}`);
     await db.runAsync('UPDATE notification_sources SET bound_package=NULL');

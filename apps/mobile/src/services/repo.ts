@@ -98,7 +98,10 @@ export async function getNetWorth(): Promise<NetWorth> {
   const l = await db.getFirstAsync<{ s: number | null }>(
     "SELECT SUM(balance) AS s FROM debts WHERE deleted_at IS NULL AND status='active'",
   );
-  const assets = a?.s ?? 0;
+  const rc = await db.getFirstAsync<{ s: number | null }>(
+    'SELECT SUM(amount - paid) AS s FROM receivables WHERE deleted_at IS NULL AND amount > paid',
+  );
+  const assets = (a?.s ?? 0) + (rc?.s ?? 0); // cuentas + lo que te deben
   const liabilities = l?.s ?? 0;
   return { assets, liabilities, net: assets - liabilities };
 }

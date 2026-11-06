@@ -82,6 +82,7 @@ export default function Settings() {
           <AppText variant="subtitle">Finanzas</AppText>
           {link('Cuentas y activos', '/accounts')}
           {link('Transferir entre mis cuentas', '/transfer')}
+          {link('Me deben (cuentas por cobrar)', '/receivables')}
           {link('Presupuestos mensuales', '/budgets')}
           {link('Gastos fijos y suscripciones', '/recurring')}
           {link('Escanear un recibo', '/scan')}

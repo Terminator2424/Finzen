@@ -45,6 +45,7 @@ async function freshDb() {
 
 import { cardSummary, createDebt, deleteDebt, getDebt, getInstallments, listPlansOf, payCard, payInstallment } from './debts';
 import { ingestNotification } from './notifications';
+import { addReceivable, deleteReceivable, inDays, listReceivables, registerReceivablePayment, summarizeReceivables } from './receivables';
 import { addAccount, getNetWorth, listAccounts, setSetting } from './repo';
 import {
   createInstallmentPurchase, createTransaction, createTransfer, deleteTransaction, listPending, monthTotals,
@@ -411,5 +412,37 @@ describe('nombre corto de Nequi', () => {
     const m = await monthTotals(monthKey());
     expect(m.income).toBe(0);
     expect(m.expense).toBe(0);
+  });
+});
+
+describe('cuentas por cobrar', () => {
+  it('suman al patrimonio, los pagos parciales las reducen y el pago completo las cierra', async () => {
+    await addAccount({ name: 'Nu', kind: 'savings', balance: 100_000, currency: 'COP' });
+    const id = await addReceivable({ debtor: 'Camilo', amount: 80_000, dueDate: inDays(7), note: 'almuerzo' });
+    expect((await getNetWorth()).assets).toBe(180_000);
+    expect(await registerReceivablePayment(id, 30_000)).toBe(30_000);
+    expect((await getNetWorth()).assets).toBe(150_000);
+    expect(await registerReceivablePayment(id)).toBe(50_000);
+    expect((await getNetWorth()).assets).toBe(100_000);
+    await expect(registerReceivablePayment(id, 1)).rejects.toThrow();
+  });
+
+  it('un pago mayor a lo que falta se limita al saldo', async () => {
+    const id = await addReceivable({ debtor: 'Ana', amount: 20_000, dueDate: null, note: null });
+    expect(await registerReceivablePayment(id, 50_000)).toBe(20_000);
+  });
+
+  it('el resumen cuenta total, personas y vencidas', async () => {
+    await addReceivable({ debtor: 'Ana', amount: 20_000, dueDate: inDays(-3), note: null });
+    await addReceivable({ debtor: 'ana ', amount: 10_000, dueDate: null, note: null });
+    await addReceivable({ debtor: 'Beto', amount: 5_000, dueDate: inDays(10), note: null });
+    expect(summarizeReceivables(await listReceivables())).toEqual({ total: 35_000, people: 2, overdue: 1 });
+  });
+
+  it('eliminar saca el cobro del patrimonio', async () => {
+    const id = await addReceivable({ debtor: 'Ana', amount: 20_000, dueDate: null, note: null });
+    expect((await getNetWorth()).assets).toBe(20_000);
+    await deleteReceivable(id);
+    expect((await getNetWorth()).assets).toBe(0);
   });
 });
