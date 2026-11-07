@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText, Button, Card, Chip, Field, MoneyField, ScreenHeader } from '../src/components/ui';
 import {
   addReceivable, daysUntil, deleteReceivable, inDays, listReceivables, registerReceivablePayment, summarizeReceivables, type Receivable,
+  applyPaymentSuggestion, dismissSuggestion, findPaymentSuggestions, type PaymentSuggestion,
 } from '../src/services/receivables';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { formatCOP, parseDigits } from '../src/utils/format';
@@ -35,6 +36,7 @@ function dueText(due: string | null): { text: string; level: 'none' | 'ok' | 'so
 export default function Receivables() {
   const { colors } = useTheme();
   const [items, setItems] = useState<Receivable[]>([]);
+  const [sugg, setSugg] = useState<PaymentSuggestion[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [debtor, setDebtor] = useState('');
   const [amount, setAmount] = useState('');
@@ -45,7 +47,7 @@ export default function Receivables() {
   const [payAmount, setPayAmount] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => { setItems(await listReceivables()); }, []);
+  const load = useCallback(async () => { setItems(await listReceivables()); setSugg(await findPaymentSuggestions()); }, []);
   useFocusEffect(useCallback(() => { load().catch(() => {}); }, [load]));
 
   const pending = items.filter((r) => r.amount > r.paid);
@@ -53,6 +55,12 @@ export default function Receivables() {
   const sum = summarizeReceivables(items);
   const value = parseDigits(amount);
   const fail = (e: unknown) => Alert.alert('No se pudo', e instanceof Error ? e.message : String(e));
+  const accept = async (s: PaymentSuggestion) => {
+    if (busy) return;
+    setBusy(true);
+    try { await applyPaymentSuggestion(s); await load(); } catch (e) { fail(e); } finally { setBusy(false); }
+  };
+  const dismiss = async (s: PaymentSuggestion) => { try { await dismissSuggestion(s.txId); await load(); } catch (e) { fail(e); } };
   const levelColor = (l: string) => (l === 'late' ? colors.danger : l === 'soon' ? colors.warning : colors.textSecondary);
 
   const save = async () => {
@@ -96,6 +104,17 @@ export default function Receivables() {
           </AppText>
           <AppText variant="caption" color={colors.textSecondary}>Cuenta como un activo en tu patrimonio hasta que te paguen.</AppText>
         </Card>
+
+        {sugg.map((s) => (
+          <Card key={s.txId} style={{ borderColor: colors.success }}>
+            <AppText variant="subtitle">💸 ¿{s.debtor} te pagó?</AppText>
+            <AppText variant="caption" color={colors.textSecondary}>
+              Entró un ingreso de {formatCOP(s.amount)} que menciona su nombre. Te debe {formatCOP(s.left)}.
+            </AppText>
+            <Button label="Sí, descontar" disabled={busy} onPress={() => accept(s)} />
+            <Button variant="ghost" label="No es de esa deuda" onPress={() => dismiss(s)} />
+          </Card>
+        ))}
 
         {showForm ? (
           <Card>

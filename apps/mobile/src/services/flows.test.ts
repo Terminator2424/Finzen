@@ -45,7 +45,7 @@ async function freshDb() {
 
 import { cardSummary, createDebt, deleteDebt, getDebt, getInstallments, listPlansOf, payCard, payInstallment } from './debts';
 import { ingestNotification } from './notifications';
-import { addReceivable, deleteReceivable, inDays, listReceivables, registerReceivablePayment, summarizeReceivables } from './receivables';
+import { addReceivable, deleteReceivable, inDays, listReceivables, registerReceivablePayment, summarizeReceivables, applyPaymentSuggestion, dismissSuggestion, findPaymentSuggestions } from './receivables';
 import { addAccount, getNetWorth, listAccounts, setSetting } from './repo';
 import {
   createInstallmentPurchase, createTransaction, createTransfer, deleteTransaction, listPending, monthTotals,
@@ -444,5 +444,41 @@ describe('cuentas por cobrar', () => {
     expect((await getNetWorth()).assets).toBe(20_000);
     await deleteReceivable(id);
     expect((await getNetWorth()).assets).toBe(0);
+  });
+});
+
+describe('pagos de cobros detectados', () => {
+  const t0 = Date.now();
+  async function conCetina(monto = 50_000) {
+    await addAccount({ name: 'Nequi', kind: 'wallet', balance: 100_000, currency: 'COP' });
+    await addReceivable({ debtor: 'Cetina', amount: monto, dueDate: null, note: null });
+  }
+  const aviso = (quien: string, n: string) => ({ packageName: 'com.nequi.MobileApp', text: `${quien} te envió ${n}, ¡lo mejor!`, receivedAt: t0 });
+
+  it('un ingreso que nombra al deudor se propone y, al aceptarlo, descuenta el cobro y no cuenta como ingreso', async () => {
+    await conCetina();
+    await ingestNotification(aviso('YOJHAN CETINA', '30.000'));
+    const s = await findPaymentSuggestions();
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({ debtor: 'Cetina', amount: 30_000, left: 50_000 });
+    await applyPaymentSuggestion(s[0]!);
+    expect((await listReceivables())[0]!.paid).toBe(30_000);
+    expect((await monthTotals(monthKey())).income).toBe(0);
+    expect(await findPaymentSuggestions()).toHaveLength(0);
+  });
+
+  it('otra persona, o un monto mayor a la deuda, no se proponen', async () => {
+    await conCetina(20_000);
+    await ingestNotification(aviso('MARIA LOPEZ', '10.000'));
+    await ingestNotification({ ...aviso('YOJHAN CETINA', '30.000'), receivedAt: t0 + 120_000 });
+    expect(await findPaymentSuggestions()).toHaveLength(0);
+  });
+
+  it('"no es de esa deuda" lo oculta', async () => {
+    await conCetina();
+    await ingestNotification(aviso('YOJHAN CETINA', '30.000'));
+    const [s] = await findPaymentSuggestions();
+    await dismissSuggestion(s!.txId);
+    expect(await findPaymentSuggestions()).toHaveLength(0);
   });
 });

@@ -14,6 +14,7 @@ import {
 import { listDrafts } from '../../src/services/notifications';
 import { getTotalRecurring } from '../../src/services/recurring'; // NUEVO IMPORT
 import { upcomingPayments, type UpcomingPayment } from '../../src/services/debts';
+import { countUnassigned } from '../../src/services/accountsCheck';
 import { listReceivables, summarizeReceivables } from '../../src/services/receivables';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { formatCOP } from '../../src/utils/format';
@@ -23,10 +24,11 @@ interface Dash {
   budgets: BudgetLine[]; recent: TxRow[]; pending: number; drafts: number; upcoming: UpcomingPayment[];
   recurringTotal: number; // NUEVO
   owed: { total: number; people: number; overdue: number };
+  unassigned: number;
 }
 const EMPTY: Dash = {
   nw: { assets: 0, liabilities: 0, net: 0 }, snaps: [], totals: { income: 0, expense: 0, debtPayments: 0 },
-  spend: [], budgets: [], recent: [], pending: 0, drafts: 0, upcoming: [], recurringTotal: 0, owed: { total: 0, people: 0, overdue: 0 },
+  spend: [], budgets: [], recent: [], pending: 0, drafts: 0, upcoming: [], recurringTotal: 0, owed: { total: 0, people: 0, overdue: 0 }, unassigned: 0,
 };
 
 async function load(): Promise<Dash> {
@@ -40,6 +42,7 @@ async function load(): Promise<Dash> {
     upcoming: await upcomingPayments(3),
     recurringTotal: await getTotalRecurring(), // NUEVO: Cargamos el total
     owed: summarizeReceivables(await listReceivables()),
+    unassigned: await countUnassigned(),
   };
 }
 
@@ -75,6 +78,17 @@ export default function Dashboard() {
           </Pressable>
         )}
 
+        {d.unassigned > 0 && (
+          <Pressable onPress={() => router.push('/accounts')}>
+            <Card style={{ borderColor: colors.warning }}>
+              <AppText color={colors.warning}>⚠ {d.unassigned} movimiento(s) leído(s) no cayeron en ninguna cuenta</AppText>
+              <AppText variant="caption" color={colors.textSecondary}>
+                Por eso tus activos no cambian. Crea una cuenta con el nombre de la app (por ejemplo Nu o Nequi). Toca para ir a Cuentas.
+              </AppText>
+            </Card>
+          </Pressable>
+        )}
+
         <Card style={{ backgroundColor: colors.primary, borderColor: colors.primary }}>
           <AppText variant="caption" color={colors.onPrimary}>Patrimonio neto</AppText>
           <AppText variant="big" color={colors.onPrimary}>{formatCOP(d.nw.net)}</AppText>
@@ -89,6 +103,11 @@ export default function Dashboard() {
           <Card style={{ flex: 1 }}>
             <AppText variant="caption" color={colors.textSecondary}>Activos</AppText>
             <AppText color={colors.success}>{formatCOP(d.nw.assets)}</AppText>
+            {!!d.nw.receivables && (
+              <AppText variant="caption" color={colors.textSecondary}>
+                Cuentas {formatCOP(d.nw.assets - d.nw.receivables)} · Me deben {formatCOP(d.nw.receivables)}
+              </AppText>
+            )}
           </Card>
           <Card style={{ flex: 1 }}>
             <AppText variant="caption" color={colors.textSecondary}>Pasivos</AppText>

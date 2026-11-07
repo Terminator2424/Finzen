@@ -28,6 +28,7 @@ export const DEFAULT_CATEGORIES: SeedCategory[] = [
   { id: 'cat_ingreso_otros', name: 'Otros ingresos', parentId: null, kind: 'income' },
   { id: 'cat_transferencia', name: 'Transferencia entre mis cuentas', parentId: null, kind: 'expense' },
   { id: 'cat_transferencia_in', name: 'Transferencia entre mis cuentas', parentId: null, kind: 'income' },
+  { id: 'cat_cobro', name: 'Cobro de deuda', parentId: null, kind: 'income' },
 ];
 
 /** SQL de inserción de las categorías predefinidas (idempotente). */

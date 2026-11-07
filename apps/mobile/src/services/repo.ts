@@ -88,7 +88,7 @@ export async function adjustAccount(db: Db, accountId: string, delta: number): P
 }
 
 // ───────────── Patrimonio ─────────────
-export interface NetWorth { assets: number; liabilities: number; net: number }
+export interface NetWorth { assets: number; liabilities: number; net: number; receivables?: number }
 
 export async function getNetWorth(): Promise<NetWorth> {
   const db = await getDb();
@@ -103,7 +103,7 @@ export async function getNetWorth(): Promise<NetWorth> {
   );
   const assets = (a?.s ?? 0) + (rc?.s ?? 0); // cuentas + lo que te deben
   const liabilities = l?.s ?? 0;
-  return { assets, liabilities, net: assets - liabilities };
+  return { assets, liabilities, net: assets - liabilities, receivables: rc?.s ?? 0 };
 }
 
 /** Guarda/actualiza la foto del patrimonio del mes actual (alimenta la gráfica de evolución). */

@@ -296,7 +296,7 @@ export async function monthTotals(month: string): Promise<MonthTotals> {
   );
   const out: MonthTotals = { income: 0, expense: 0, debtPayments: 0 };
   for (const r of rows) {
-    if (r.cat === 'cat_transferencia' || r.cat === 'cat_transferencia_in') continue; // entre tus propias cuentas: ni ingreso ni gasto
+    if (r.cat === 'cat_transferencia' || r.cat === 'cat_transferencia_in' || r.cat === 'cat_cobro') continue; // entre tus propias cuentas: ni ingreso ni gasto
     if (r.type === 'income') out.income += r.s;
     else if (r.cat === 'cat_deudas') out.debtPayments += r.s;
     else out.expense += r.s;
@@ -330,7 +330,7 @@ export interface Category { id: string; name: string; parent_id: string | null; 
 
 export async function listCategories(): Promise<Category[]> {
   const db = await getDb();
-  return db.getAllAsync<Category>('SELECT id,name,parent_id,kind FROM categories WHERE deleted_at IS NULL AND id NOT IN (\'cat_transferencia\',\'cat_transferencia_in\') ORDER BY parent_id IS NOT NULL, name');
+  return db.getAllAsync<Category>('SELECT id,name,parent_id,kind FROM categories WHERE deleted_at IS NULL AND id NOT IN (\'cat_transferencia\',\'cat_transferencia_in\',\'cat_cobro\') ORDER BY parent_id IS NOT NULL, name');
 }
 
 export interface RuleRow extends CategoryRule { id: string }

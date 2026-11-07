@@ -99,7 +99,7 @@ Tus datos viven solo en el celular, así que el respaldo cifrado (AES-256-GCM co
 
 ## Me deben (cuentas por cobrar)
 
-Anota quién te debe plata, cuánto y cuándo te paga (Ajustes → Me deben). Cada cobro muestra lo que falta, una barra de progreso y la fecha de pago (en rojo si ya venció), admite pagos parciales y te avisa el día en que te toca cobrar. Mientras no te paguen, lo que te deben cuenta como un activo en tu patrimonio. No cambia el saldo de tus cuentas: el dinero entra y sale por las notificaciones o los movimientos de siempre, así no se cuenta dos veces. Los nombres se guardan solo en el celular, entran en el respaldo cifrado y no se envían a la IA.
+Anota quién te debe plata, cuánto y cuándo te paga (Ajustes → Me deben). Cada cobro muestra lo que falta, una barra de progreso y la fecha de pago (en rojo si ya venció), admite pagos parciales y te avisa el día en que te toca cobrar. Mientras no te paguen, lo que te deben cuenta como un activo en tu patrimonio. No cambia el saldo de tus cuentas: el dinero entra y sale por las notificaciones o los movimientos de siempre, así no se cuenta dos veces. Los nombres se guardan solo en el celular, entran en el respaldo cifrado y no se envían a la IA. Cuando entra un ingreso por notificación que nombra a alguien de la lista y no supera lo que debe, FinZen propone "¿te pagó?": al aceptar, descuenta el cobro y ese ingreso queda como cobro de deuda, no como ingreso del mes.
 
 ## Arquitectura del proyecto
 
