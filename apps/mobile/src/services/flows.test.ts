@@ -45,6 +45,9 @@ async function freshDb() {
 
 import { cardSummary, createDebt, deleteDebt, getDebt, getInstallments, listPlansOf, payCard, payInstallment } from './debts';
 import { ingestNotification } from './notifications';
+import { listRecentAuto, undoAuto } from './autoLog';
+import { isDemoLoaded, loadDemo, removeDemo } from './demo';
+import { getSenderRules, normalizeSender, resetSenderRules, saveSenderRules } from './senderRules';
 import { decreaseDebt, increaseDebt, listAdjustments, payDebtCapital, setCreditLimit } from './debtAdjust';
 import { addReceivable, deleteReceivable, inDays, listReceivables, registerReceivablePayment, summarizeReceivables, applyPaymentSuggestion, dismissSuggestion, findPaymentSuggestions } from './receivables';
 import { addAccount, getNetWorth, listAccounts, setSetting } from './repo';
@@ -525,5 +528,60 @@ describe('ajustar deudas', () => {
     expect((await getDebt(cardId))!.credit_limit).toBe(3_000_000);
     expect((await cardSummary((await getDebt(cardId))!)).available).toBe(3_000_000);
     await expect(setCreditLimit(cardId, 0)).rejects.toThrow();
+  });
+});
+
+describe('remitentes permitidos', () => {
+  it('normaliza a una sola palabra, sin tildes', () => {
+    expect(normalizeSender('Sistecrédito')).toBe('sistecredito');
+    expect(normalizeSender('  ~Addi Colombia')).toBe('addi');
+    expect(normalizeSender('ab')).toBeNull();
+    expect(normalizeSender('***')).toBeNull();
+  });
+
+  it('sin ajustes usa los originales; un paquete original nunca queda sin regla; restablecer los devuelve', async () => {
+    expect((await getSenderRules())['com.whatsapp']).toEqual(['addi', 'sistecredito']);
+    await saveSenderRules({ 'com.google.android.apps.messages': ['tigo', 'bancolombia'] });
+    const r = await getSenderRules();
+    expect(r['com.google.android.apps.messages']).toEqual(['tigo', 'bancolombia']);
+    expect(r['com.whatsapp']).toEqual([]); // lista vacía = no se lee nada, nunca "todo"
+    await resetSenderRules();
+    expect((await getSenderRules())['com.whatsapp']).toEqual(['addi', 'sistecredito']);
+  });
+});
+
+describe('deshacer movimientos automáticos', () => {
+  it('lista lo que FinZen registró solo; deshacer devuelve el saldo y el aviso no se reimporta', async () => {
+    await addAccount({ name: 'Nequi', kind: 'wallet', balance: 100_000, currency: 'COP' });
+    const t0 = Math.floor(Date.now() / 60_000) * 60_000;
+    const n = { packageName: 'com.nequi.MobileApp', text: 'Pagaste $18.500 en Tienda D1 con tu cuenta', receivedAt: t0 };
+    expect(await ingestNotification(n)).toBe('imported');
+    const [a] = await listRecentAuto(t0);
+    expect(a).toMatchObject({ type: 'expense', amount: 18_500, account: 'Nequi' });
+    expect((await listAccounts())[0]!.balance).toBe(81_500);
+    expect(await undoAuto(a!.id)).toBe(true);
+    expect((await listAccounts())[0]!.balance).toBe(100_000);
+    expect(await listRecentAuto(t0)).toHaveLength(0);
+    expect(await ingestNotification({ ...n, receivedAt: t0 + 5_000 })).toBe('duplicate');
+  });
+});
+
+describe('modo demo', () => {
+  it('carga datos de ejemplo, suman al patrimonio y se quitan sin dejar rastro', async () => {
+    await loadDemo();
+    expect(await isDemoLoaded()).toBe(true);
+    expect((await getNetWorth()).assets).toBeGreaterThan(1_000_000);
+    await removeDemo();
+    expect(await isDemoLoaded()).toBe(false);
+    expect((await getNetWorth()).assets).toBe(0);
+    const db = holder.db as any;
+    for (const t of ['accounts', 'transactions', 'debts', 'debt_installments', 'receivables', 'receivable_payments', 'net_worth_snapshots']) {
+      expect(await db.getAllAsync('SELECT 1 FROM ' + t)).toHaveLength(0);
+    }
+  });
+
+  it('se niega si ya hay datos reales', async () => {
+    await addAccount({ name: 'Nu', kind: 'savings', balance: 1, currency: 'COP' });
+    await expect(loadDemo()).rejects.toThrow();
   });
 });

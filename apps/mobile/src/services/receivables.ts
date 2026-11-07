@@ -104,7 +104,7 @@ export function summarizeReceivables(list: Receivable[]): { total: number; peopl
 // ───────────── Pagos detectados ─────────────
 export interface PaymentSuggestion { txId: string; debtorId: string; debtor: string; amount: number; at: number; left: number }
 const DISMISSED_KEY = 'receivable_dismissed';
-const SUGGEST_DAYS = 21;
+const SUGGEST_DAYS = 7; // la bitácora de notificaciones se poda a los 7 días
 
 async function dismissedIds(): Promise<string[]> {
   try {

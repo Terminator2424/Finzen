@@ -181,6 +181,7 @@ export default function NotificationSources() {
           <AppText variant="subtitle">Ayuda y herramientas</AppText>
           <Button variant="ghost" label="Guía paso a paso" onPress={() => go('/notification-help')} />
           <Button variant="ghost" label="Probar el lector con un texto" onPress={() => go('/notification-test')} />
+          <Button variant="ghost" label="Remitentes y avisos" onPress={() => go('/notification-senders')} />
           <Button variant="ghost" label="Diagnóstico técnico" onPress={() => go('/notification-diagnostics')} />
         </Card>
 

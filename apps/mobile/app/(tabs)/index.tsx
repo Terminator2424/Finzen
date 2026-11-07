@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { Alert, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { budgetStatus, monthKey } from '@finzen/core';
@@ -15,6 +15,7 @@ import { listDrafts } from '../../src/services/notifications';
 import { getTotalRecurring } from '../../src/services/recurring'; // NUEVO IMPORT
 import { upcomingPayments, type UpcomingPayment } from '../../src/services/debts';
 import { countUnassigned } from '../../src/services/accountsCheck';
+import { listRecentAuto, undoAuto, type AutoTx } from '../../src/services/autoLog';
 import { listReceivables, summarizeReceivables } from '../../src/services/receivables';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { formatCOP } from '../../src/utils/format';
@@ -25,10 +26,11 @@ interface Dash {
   recurringTotal: number; // NUEVO
   owed: { total: number; people: number; overdue: number };
   unassigned: number;
+  recentAuto: AutoTx[];
 }
 const EMPTY: Dash = {
   nw: { assets: 0, liabilities: 0, net: 0 }, snaps: [], totals: { income: 0, expense: 0, debtPayments: 0 },
-  spend: [], budgets: [], recent: [], pending: 0, drafts: 0, upcoming: [], recurringTotal: 0, owed: { total: 0, people: 0, overdue: 0 }, unassigned: 0,
+  spend: [], budgets: [], recent: [], pending: 0, drafts: 0, upcoming: [], recurringTotal: 0, owed: { total: 0, people: 0, overdue: 0 }, unassigned: 0, recentAuto: [],
 };
 
 async function load(): Promise<Dash> {
@@ -43,6 +45,7 @@ async function load(): Promise<Dash> {
     recurringTotal: await getTotalRecurring(), // NUEVO: Cargamos el total
     owed: summarizeReceivables(await listReceivables()),
     unassigned: await countUnassigned(),
+    recentAuto: await listRecentAuto(Date.now() - 12 * 3_600_000, 3),
   };
 }
 
@@ -50,7 +53,7 @@ export default function Dashboard() {
   const { colors } = useTheme();
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const [d] = useFocusData(load, EMPTY);
+  const [d, reload] = useFocusData(load, EMPTY);
 
   const prev = d.snaps.length >= 2 ? d.snaps[d.snaps.length - 2]! : null;
   const delta = prev ? d.nw.net - prev.net : null;
@@ -87,6 +90,30 @@ export default function Dashboard() {
               </AppText>
             </Card>
           </Pressable>
+        )}
+
+        {d.recentAuto.length > 0 && (
+          <Card>
+            <AppText variant="subtitle">Registrado por FinZen</AppText>
+            {d.recentAuto.map((t) => (
+              <View key={t.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <View style={{ flex: 1 }}>
+                  <AppText variant="caption">{t.type === 'income' ? '+' : '-'}{formatCOP(t.amount)}{t.merchant ? ` · ${t.merchant}` : ''}</AppText>
+                  {!!t.account && <AppText variant="caption" color={colors.textSecondary}>{t.account}</AppText>}
+                </View>
+                <Pressable
+                  hitSlop={8}
+                  onPress={async () => {
+                    const ok = await undoAuto(t.id).catch(() => false);
+                    if (!ok) Alert.alert('No se pudo deshacer', 'Bórralo desde Movimientos.');
+                    reload();
+                  }}
+                >
+                  <AppText variant="caption" color={colors.primary}>Deshacer</AppText>
+                </Pressable>
+              </View>
+            ))}
+          </Card>
         )}
 
         <Card style={{ backgroundColor: colors.primary, borderColor: colors.primary }}>

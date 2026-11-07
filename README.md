@@ -105,6 +105,16 @@ Anota quién te debe plata, cuánto y cuándo te paga (Ajustes → Me deben). Ca
 
 En Deudas, cada tarjeta tiene un enlace "Ajustar": **Me prestaron más** (en tarjetas, "Gasté más") suma al saldo; **Pagué** baja el saldo como pago de deuda, en efectivo o en persona (no toca cuentas) o desde una cuenta; **Corregir a la baja** baja el saldo sin mover dinero. En las tarjetas también se puede cambiar el cupo. Cada ajuste queda en un historial. Los planes con calendario de cuotas (Addi, Sistecrédito, compras a cuotas) no admiten cambiar el saldo suelto, porque se descuadraría de la tabla de cuotas: ahí se marca la cuota como pagada.
 
+## Remitentes y avisos
+
+En Lectura de notificaciones → Remitentes y avisos puedes ver y editar los remitentes permitidos de WhatsApp y de los SMS (una sola palabra: la primera del título del aviso). Los paquetes de mensajes nunca quedan sin regla: si quitas todos los remitentes, no se lee nada de esa app. Agregar uno en WhatsApp pide confirmación, porque permite leer los chats individuales de ese remitente.
+
+Cuando FinZen registra algo solo, avisa con una notificación ("Gasto registrado $18.500") con un botón **Deshacer**, y en Inicio muestra durante 12 horas lo registrado por FinZen, también con Deshacer. Deshacer devuelve el saldo (y borra las dos mitades de una transferencia) y el mismo aviso no se vuelve a importar. Las confirmaciones se pueden apagar en la misma pantalla.
+
+## Modo demo
+
+Ajustes → Modo demo carga cuentas, movimientos, una tarjeta, deudas y cobros de ejemplo para grabar el video sin mostrar tus finanzas reales. Solo se carga con la base vacía (haz un respaldo cifrado, borra los datos, carga la demo y al terminar restaura el respaldo), no se sincroniza con la nube y se puede quitar sin tocar nada real.
+
 ## Arquitectura del proyecto
 
 Monorepo con NPM Workspaces:

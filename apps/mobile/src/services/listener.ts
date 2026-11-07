@@ -2,10 +2,12 @@ import { AppState } from 'react-native';
 import { NotificationListener } from '../../modules/finzen-notifications';
 import { getDb } from './db';
 import { ensureListenerAlive, setSenderRules } from './listenerHealth';
-import { SENDER_RULES } from './senderRules';
+import { getSenderRules } from './senderRules';
 import { ingestNotification } from './notifications';
 import { notifyNow, rescheduleReminders } from './reminders';
 import { listPending } from './transactions';
+import { listRecentAuto } from './autoLog';
+import { announceAuto, startUndoListener } from './autoNotify';
 
 /**
  * Puente entre el servicio nativo (Kotlin) y el resto de la app.
@@ -44,6 +46,7 @@ async function processQueue(): Promise<number> {
   const items = NotificationListener.peek();
   if (items.length === 0) return 0;
   logIngest(`cola: ${items.length} pendiente(s)`);
+  const startedAt = Date.now();
   const pendingBefore = (await listPending()).length;
   let imported = 0;
   let billSaved = false;
@@ -65,6 +68,7 @@ async function processQueue(): Promise<number> {
     }
   }
   NotificationListener.ack(done);
+  if (imported > 0) { try { await announceAuto(await listRecentAuto(startedAt, 3)); } catch { /* aviso opcional */ } }
   if (billSaved) await rescheduleReminders();
   const pendingAfter = (await listPending()).length;
   if (pendingAfter > pendingBefore) {
@@ -107,13 +111,14 @@ export function startListenerBridge(onImported?: () => void): () => void {
   };
   const boot = () => {
     ensureListenerAlive().catch(() => {});
-    setSenderRules(SENDER_RULES);
+    getSenderRules().then(setSenderRules).catch(() => {});
     syncWhitelist().then(run).catch((e) => logIngest(`sync lista blanca ERROR: ${e instanceof Error ? e.message : String(e)}`));
   };
   boot();
   const sub = NotificationListener.onQueued(run);
+  const undoSub = startUndoListener(onImported);
   const app = AppState.addEventListener('change', (s) => { if (s === 'active') boot(); });
   // Respaldo: si el aviso en vivo del servicio nativo no llega, la cola igual se revisa.
   const poll = setInterval(() => { syncWhitelist().catch(() => {}); run(); }, 20_000);
-  return () => { sub.remove(); app.remove(); clearInterval(poll); };
+  return () => { sub.remove(); app.remove(); clearInterval(poll); undoSub(); };
 }
