@@ -45,6 +45,7 @@ async function freshDb() {
 
 import { cardSummary, createDebt, deleteDebt, getDebt, getInstallments, listPlansOf, payCard, payInstallment } from './debts';
 import { ingestNotification } from './notifications';
+import { decreaseDebt, increaseDebt, listAdjustments, payDebtCapital, setCreditLimit } from './debtAdjust';
 import { addReceivable, deleteReceivable, inDays, listReceivables, registerReceivablePayment, summarizeReceivables, applyPaymentSuggestion, dismissSuggestion, findPaymentSuggestions } from './receivables';
 import { addAccount, getNetWorth, listAccounts, setSetting } from './repo';
 import {
@@ -480,5 +481,49 @@ describe('pagos de cobros detectados', () => {
     const [s] = await findPaymentSuggestions();
     await dismissSuggestion(s!.txId);
     expect(await findPaymentSuggestions()).toHaveLength(0);
+  });
+});
+
+describe('ajustar deudas', () => {
+  const informal = () => createDebt({ name: 'Cetina', kind: 'informal', balance: 300_000, monthlyPayment: 0, annualRatePct: 0, dueDay: null });
+
+  it('aumentar y corregir a la baja cambian el saldo sin tocar cuentas y quedan en el historial', async () => {
+    await addAccount({ name: 'Nu', kind: 'savings', balance: 100_000, currency: 'COP' });
+    const id = await informal();
+    await increaseDebt(id, 100_000, 'me prestó más');
+    expect((await getDebt(id))!.balance).toBe(400_000);
+    expect((await getNetWorth()).liabilities).toBe(400_000);
+    await decreaseDebt(id, 50_000, null);
+    expect((await getDebt(id))!.balance).toBe(350_000);
+    expect((await listAccounts())[0]!.balance).toBe(100_000);
+    expect(await listAdjustments(id)).toHaveLength(2);
+  });
+
+  it('pagar en persona no toca cuentas, pagar desde una cuenta la descuenta y a cero se cierra', async () => {
+    await addAccount({ name: 'Nu', kind: 'savings', balance: 500_000, currency: 'COP' });
+    const accountId = (await listAccounts())[0]!.id;
+    const id = await informal();
+    await payDebtCapital(id, 100_000, null);
+    expect((await getDebt(id))!.balance).toBe(200_000);
+    expect((await listAccounts())[0]!.balance).toBe(500_000);
+    await payDebtCapital(id, 200_000, accountId);
+    expect((await listAccounts())[0]!.balance).toBe(300_000);
+    expect((await getDebt(id))!.status).toBe('paid');
+  });
+
+  it('un plan con calendario de cuotas no admite cambiar el saldo suelto', async () => {
+    const r = await createInstallmentPurchase(
+      { type: 'expense', amount: 300_000, merchant: 'Falabella', categoryId: 'cat_compras', paymentMethod: 'credit' },
+      { name: 'Falabella', provider: null, parentDebtId: null, installments: 3, mode: { kind: 'zero', feePerInstallment: 0 }, firstDueDate: FIRST_DUE },
+    );
+    await expect(increaseDebt(r.planId, 1_000, null)).rejects.toThrow();
+  });
+
+  it('el cupo de la tarjeta se puede subir', async () => {
+    const { cardId } = await setup();
+    await setCreditLimit(cardId, 3_000_000);
+    expect((await getDebt(cardId))!.credit_limit).toBe(3_000_000);
+    expect((await cardSummary((await getDebt(cardId))!)).available).toBe(3_000_000);
+    await expect(setCreditLimit(cardId, 0)).rejects.toThrow();
   });
 });

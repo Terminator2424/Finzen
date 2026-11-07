@@ -26,7 +26,7 @@ import { setSetting, uid } from './repo';
 const USER_TABLES = [
   // Orden de inserción (padres antes que hijos)
   'categories', 'accounts', 'debts', 'debt_installments', 'transactions', 'budgets', 'categorization_rules',
-  'recurring_expenses', 'receivables', 'receivable_payments',
+  'recurring_expenses', 'receivables', 'receivable_payments', 'debt_adjustments',
 ] as const;
 const BACKUP_VERSION = 2;
 const MAX_IMPORT_BYTES = 5_000_000; // extractos CSV

@@ -89,7 +89,12 @@ export default function Debts() {
                     <AppText variant="subtitle">{d.name}</AppText>
                     <AppText variant="caption" color={colors.textSecondary}>{DEBT_KIND_LABEL[d.kind]}</AppText>
                   </View>
-                  <AppText color={colors.danger}>{formatCOP(u ? u.used : d.balance)}</AppText>
+                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                    <AppText color={colors.danger}>{formatCOP(u ? u.used : d.balance)}</AppText>
+                    <Pressable onPress={() => router.push({ pathname: '/debt-adjust', params: { id: d.id } } as never)} hitSlop={8}>
+                      <AppText variant="caption" color={colors.primary}>Ajustar</AppText>
+                    </Pressable>
+                  </View>
                 </View>
                 {u && d.credit_limit ? (
                   <>
