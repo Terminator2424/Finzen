@@ -32,7 +32,7 @@
                                                             "com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE"
                                                         ],
                                  "allowBackup":  false,
-                                 "versionCode":  8
+                                 "versionCode":  9
                              },
                  "plugins":  [
                                  "expo-router",
