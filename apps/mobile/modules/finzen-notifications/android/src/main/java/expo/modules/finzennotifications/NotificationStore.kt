@@ -58,8 +58,8 @@ object NotificationStore {
 
   // ---- Reglas de remitente (WhatsApp) ----
   private val DEFAULT_SENDERS: Map<String, List<String>> = mapOf(
-    "com.whatsapp" to listOf("addi", "sistecredito"),
-    "com.whatsapp.w4b" to listOf("addi", "sistecredito"),
+    "com.google.android.apps.messages" to listOf("tigo"),
+    "com.samsung.android.messaging" to listOf("tigo"),
   )
   private val DIACRITICS = Regex("\\p{Mn}+")
   private val NON_ALNUM = Regex("[^a-z0-9]+")
@@ -160,6 +160,7 @@ object NotificationStore {
   // ---- Entrada principal ----
   fun handle(ctx: Context, sbn: StatusBarNotification, replay: Boolean = false) {
     val pkg = sbn.packageName ?: return
+    if (pkg.startsWith("com.whatsapp")) return // WhatsApp ya no se lee
     if (pkg == ctx.packageName) return
     val p = prefs(ctx)
 

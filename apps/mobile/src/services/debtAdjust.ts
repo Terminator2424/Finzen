@@ -88,3 +88,65 @@ export async function listAdjustments(debtId: string, limit = 6): Promise<DebtAd
     'SELECT id, kind, amount, note, created_at FROM debt_adjustments WHERE debt_id=? ORDER BY created_at DESC LIMIT ?', [debtId, limit],
   );
 }
+
+export interface AssignableExpense { id: string; merchant: string | null; amount: number; occurred_at: number; account: string | null }
+
+/** Gastos de los últimos 30 días que se pueden convertir en pago de una deuda. */
+export async function listAssignableExpenses(limit = 10): Promise<AssignableExpense[]> {
+  const db = await getDb();
+  return db.getAllAsync<AssignableExpense>(
+    `SELECT t.id, t.merchant, t.amount, t.occurred_at, a.name AS account
+       FROM transactions t LEFT JOIN accounts a ON a.id = t.account_id
+      WHERE t.deleted_at IS NULL AND t.type='expense' AND t.status='posted' AND t.debt_id IS NULL
+        AND COALESCE(t.category_id,'') NOT IN ('cat_deudas','cat_transferencia','cat_transferencia_in','cat_cobro')
+        AND t.occurred_at >= ?
+      ORDER BY t.occurred_at DESC LIMIT ?`,
+    [Date.now() - 30 * 86_400_000, limit],
+  );
+}
+
+/**
+ * Convierte un gasto ya registrado en pago de una deuda: baja la deuda (o marca la próxima cuota si es un plan con
+ * calendario y el valor coincide), el movimiento pasa a "Pago de deudas" (deja de ser gasto del mes) y la cuenta NO se
+ * vuelve a mover, porque el dinero ya salió cuando se registró el gasto.
+ */
+export async function assignExpenseToDebt(txId: string, debtId: string): Promise<void> {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    const tx = await db.getFirstAsync<{ type: string; amount: number; status: string; debt_id: string | null; category_id: string | null; merchant: string | null }>(
+      'SELECT type, amount, status, debt_id, category_id, merchant FROM transactions WHERE id=? AND deleted_at IS NULL', [txId],
+    );
+    if (!tx) throw new Error('Ese movimiento ya no existe');
+    if (tx.type !== 'expense' || tx.status !== 'posted') throw new Error('Solo se puede asignar un gasto ya registrado');
+    if (tx.debt_id || ['cat_deudas', 'cat_transferencia', 'cat_transferencia_in', 'cat_cobro'].includes(tx.category_id ?? '')) {
+      throw new Error('Ese movimiento ya está ligado a una deuda o es una transferencia');
+    }
+    const d = await db.getFirstAsync<{ name: string; balance: number; installments_total: number | null }>(
+      'SELECT name, balance, installments_total FROM debts WHERE id=? AND deleted_at IS NULL', [debtId],
+    );
+    if (!d) throw new Error('La deuda ya no existe');
+    if (d.installments_total !== null) {
+      const inst = await db.getFirstAsync<{ id: string; principal: number; total: number }>(
+        'SELECT id, principal, total FROM debt_installments WHERE debt_id=? AND paid_at IS NULL AND deleted_at IS NULL ORDER BY number LIMIT 1', [debtId],
+      );
+      if (!inst) throw new Error('Este plan no tiene cuotas pendientes');
+      if (Math.abs(inst.total - tx.amount) > Math.max(1, Math.round(inst.total * 0.005))) {
+        throw new Error(`El valor no coincide con la próxima cuota (${inst.total}). Para otro monto, registra el pago desde la cuota.`);
+      }
+      await patchRow(db, 'debt_installments', inst.id, { paid_at: Date.now() });
+      const left = await db.getFirstAsync<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM debt_installments WHERE debt_id=? AND paid_at IS NULL AND deleted_at IS NULL AND id<>?', [debtId, inst.id],
+      );
+      await patchRow(db, 'debts', debtId, { balance: Math.max(0, d.balance - inst.principal), status: (left?.n ?? 0) === 0 ? 'paid' : 'active' });
+    } else {
+      const applied = Math.min(tx.amount, d.balance);
+      if (!(applied > 0)) throw new Error('Esta deuda ya está en cero');
+      const balance = d.balance - applied;
+      await patchRow(db, 'debts', debtId, { balance, status: balance === 0 ? 'paid' : 'active' });
+      await log(db, debtId, 'payment', applied, 'Asignado desde un gasto');
+    }
+    await patchRow(db, 'transactions', txId, {
+      category_id: 'cat_deudas', debt_id: debtId, merchant: `Pago · ${d.name}`, note: tx.merchant ? `Antes: ${tx.merchant}` : null,
+    });
+  });
+}

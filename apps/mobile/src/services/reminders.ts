@@ -113,6 +113,16 @@ export async function rescheduleReminders(): Promise<number> {
       [todayString()],
     );
     for (const o of owed) await schedule(at9(o.due_date, 0), 'Hoy te toca cobrar', `${o.debtor} te debe ${cop(o.amount - o.paid)}`);
+    // Deudas sin calendario de cuotas (informales y créditos con día de pago): un día antes y el mismo día.
+    const dueDebts = await db.getAllAsync<{ name: string; balance: number; monthly_payment: number | null; due_day: number }>(
+      "SELECT name, balance, monthly_payment, due_day FROM debts WHERE deleted_at IS NULL AND status='active' AND kind <> 'credit_card' AND installments_total IS NULL AND due_day IS NOT NULL AND balance > 0",
+    );
+    for (const d of dueDebts) {
+      const due = nextOccurrence(todayString(), d.due_day);
+      const amount = cop(d.monthly_payment ?? d.balance);
+      await schedule(at9(due, 1), 'Pago mañana', `${d.name}: ${amount}`);
+      await schedule(at9(due, 0), 'Hoy toca pagar', `${d.name}: ${amount}`);
+    }
     return count;
   } catch (e) {
     console.warn('rescheduleReminders', e);

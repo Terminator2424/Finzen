@@ -61,11 +61,13 @@ function extractAmount(text: string): number | null {
 
 // Añadimos "te envió" y "te envio" al patrón de ingresos
 const INCOME_RE = /recibiste|te\s+(?:enviaron|envi[oó]|lleg[oó]|llegaron|consignaron|transfirieron|pagaron|depositaron)|abono|dep[oó]sito|consignaci[oó]n|ingreso\s+de|te\s+enviaron\s+plata|transferencia\s+recibida|bre[-\s]?b|llave/i;
-const EXPENSE_RE = /enviaste|env[ií]o|compraste|compra|pagaste|pago|retiro|retiraste|transferiste|d[eé]bito|cargo|avance|cobro|se\s+descont|pago\s+por|bre[-\s]?b|llave/i;
+const EXPENSE_RE = /pasaste|enviaste|env[ií]o|compraste|compra|pagaste|pago|retiro|retiraste|transferiste|d[eé]bito|cargo|avance|cobro|se\s+descont|pago\s+por|bre[-\s]?b|llave/i;
 const DEBT_PAYMENT_RE = /(?:pagaste|pago\s+(?:de|a))\s+(?:tu\s+|la\s+)?(?:cuota|tarjeta|cr[eé]dito|pr[eé]stamo|factura\s+de\s+tarjeta|deuda)/i;
 const CREDIT_HINT_RE = /cr[eé]dito|cuotas?\b|diferid|financi/i;
 const DEBIT_HINT_RE = /d[eé]bito|ahorros|cuenta\s+(?:corriente|de\s+ahorros)/i;
 const BRE_B_RE = /bre[-\s]?b|llave/i;
+/** Avisos que NO son un movimiento: pago por hacer (PSE) o pago rechazado. Mantener igual que NOT_A_MOVEMENT en notifications.ts. */
+const NOT_A_MOVEMENT_RE = /tienes\s+un\s+pago\s+(?:pendiente\s+)?por|completa\s+tu\s+pago|rechazad|declinad|no\s+(?:fue|pudo)\s+(?:aprobad|procesad)|transacci[oó]n\s+fallida/i;
 
 function extractMerchant(text: string): string | null {
   const clean = text.replace(/\ben\s+\d+\s+cuotas?/gi, ' ');
@@ -81,15 +83,16 @@ export function parseNotification(
   maskedText: string,
   sourceKind: 'bank' | 'wallet' | 'bnpl',
 ): ParsedNotification | null {
+  if (NOT_A_MOVEMENT_RE.test(maskedText)) return null;
   const amount = extractAmount(maskedText);
   if (!amount) return null;
 
-  const isIncome = INCOME_RE.test(maskedText) && (/\bte\s+(?:enviaron|envi[oó])(?![a-záéíóúñ])/i.test(maskedText) || !/pagaste|compraste|enviaste|transferiste|retiraste|env[ií]o/i.test(maskedText));
+  const isIncome = INCOME_RE.test(maskedText) && (/\bte\s+(?:enviaron|env[ií]o|envi[oó])(?![a-záéíóúñ])/i.test(maskedText) || !/pasaste|pagaste|compraste|enviaste|transferiste|retiraste|env[ií]o/i.test(maskedText));
   const isExpense = EXPENSE_RE.test(maskedText);
   if (!isIncome && !isExpense) return null;
 
   const type = isIncome ? 'income' : 'expense';
-  const isDebtPayment = type === 'expense' && DEBT_PAYMENT_RE.test(maskedText);
+  const isDebtPayment = type === 'expense' && (DEBT_PAYMENT_RE.test(maskedText) || /recibimos\s+tu\s+pago/i.test(maskedText));
 
   let paymentMethod: PaymentMethod = 'unknown';
   if (sourceKind === 'bnpl') paymentMethod = 'bnpl';

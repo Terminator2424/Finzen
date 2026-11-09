@@ -47,8 +47,8 @@ import { cardSummary, createDebt, deleteDebt, getDebt, getInstallments, listPlan
 import { ingestNotification } from './notifications';
 import { listRecentAuto, undoAuto } from './autoLog';
 import { isDemoLoaded, loadDemo, removeDemo } from './demo';
-import { getSenderRules, normalizeSender, resetSenderRules, saveSenderRules } from './senderRules';
-import { decreaseDebt, increaseDebt, listAdjustments, payDebtCapital, setCreditLimit } from './debtAdjust';
+import { forNative, getSenderRules, normalizeSender, resetSenderRules, saveSenderRules } from './senderRules';
+import { decreaseDebt, increaseDebt, listAdjustments, payDebtCapital, setCreditLimit, assignExpenseToDebt } from './debtAdjust';
 import { addReceivable, deleteReceivable, inDays, listReceivables, registerReceivablePayment, summarizeReceivables, applyPaymentSuggestion, dismissSuggestion, findPaymentSuggestions } from './receivables';
 import { addAccount, getNetWorth, listAccounts, setSetting } from './repo';
 import {
@@ -539,14 +539,16 @@ describe('remitentes permitidos', () => {
     expect(normalizeSender('***')).toBeNull();
   });
 
-  it('sin ajustes usa los originales; un paquete original nunca queda sin regla; restablecer los devuelve', async () => {
-    expect((await getSenderRules())['com.whatsapp']).toEqual(['addi', 'sistecredito']);
+  it('sin ajustes usa los originales; un paquete original nunca queda sin regla; WhatsApp siempre bloqueado', async () => {
+    expect((await getSenderRules())['com.google.android.apps.messages']).toEqual(['tigo']);
     await saveSenderRules({ 'com.google.android.apps.messages': ['tigo', 'bancolombia'] });
     const r = await getSenderRules();
     expect(r['com.google.android.apps.messages']).toEqual(['tigo', 'bancolombia']);
-    expect(r['com.whatsapp']).toEqual([]); // lista vacía = no se lee nada, nunca "todo"
+    expect(r['com.samsung.android.messaging']).toEqual([]); // lista vacía = no se lee nada, nunca "todo"
+    expect(r['com.whatsapp']).toBeUndefined();
+    expect(forNative(r)['com.whatsapp']).toEqual([]); // el servicio nativo recibe WhatsApp bloqueado
     await resetSenderRules();
-    expect((await getSenderRules())['com.whatsapp']).toEqual(['addi', 'sistecredito']);
+    expect((await getSenderRules())['com.samsung.android.messaging']).toEqual(['tigo']);
   });
 });
 
@@ -583,5 +585,86 @@ describe('modo demo', () => {
   it('se niega si ya hay datos reales', async () => {
     await addAccount({ name: 'Nu', kind: 'savings', balance: 1, currency: 'COP' });
     await expect(loadDemo()).rejects.toThrow();
+  });
+});
+
+describe('pago de cuotas por PSE', () => {
+  const t0 = Math.floor(Date.now() / 60_000) * 60_000;
+  const nuPse = (receivedAt: number) => ({ packageName: 'com.nu.production', title: 'Nu', text: 'Pago aprobado por $123.083,30 Pagaste en P.A. ADDI con tu cuenta de ahorros. Si tienes dudas contáctanos via chat.', receivedAt });
+  async function conPlan() {
+    await addAccount({ name: 'Nu', kind: 'savings', balance: 500_000, currency: 'COP' });
+    return createInstallmentPurchase(
+      { type: 'expense', amount: 369_249, merchant: 'Audifonos', categoryId: 'cat_compras', paymentMethod: 'bnpl' },
+      { name: 'Addi Audifonos', provider: 'Addi', parentDebtId: null, installments: 3, mode: { kind: 'zero', feePerInstallment: 0 }, firstDueDate: FIRST_DUE },
+    );
+  }
+
+  it('el pago aprobado por PSE marca la cuota de Addi y descuenta de la cuenta; repetirlo no paga otra', async () => {
+    const r = await conPlan();
+    expect(await ingestNotification(nuPse(t0))).toBe('imported');
+    const insts = await getInstallments(r.planId);
+    expect(insts[0]!.paid_at).not.toBeNull();
+    expect(insts[1]!.paid_at).toBeNull();
+    expect((await listAccounts())[0]!.balance).toBe(500_000 - 123_083);
+    expect(await ingestNotification(nuPse(t0 + 120_000))).toBe('duplicate');
+    expect((await getInstallments(r.planId))[1]!.paid_at).toBeNull();
+  });
+
+  it('otro aviso del mismo pago, con distinto texto, no lo cuenta dos veces', async () => {
+    const r = await conPlan();
+    await ingestNotification(nuPse(t0));
+    const again = { packageName: 'com.nu.production', title: 'Nu', text: 'Pago aprobado por $123.083,30 Pagaste en ADDI SAS con tu cuenta de ahorros.', receivedAt: t0 + 180_000 };
+    expect(await ingestNotification(again)).toBe('duplicate');
+    expect((await getInstallments(r.planId))[1]!.paid_at).toBeNull();
+    expect((await listAccounts())[0]!.balance).toBe(500_000 - 123_083);
+  });
+
+  it('un pago por PSE a un proveedor sin deuda registrada queda como gasto normal', async () => {
+    await addAccount({ name: 'Nu', kind: 'savings', balance: 500_000, currency: 'COP' });
+    const out = await ingestNotification({ packageName: 'com.nu.production', title: 'Nu', text: 'Pago aprobado por $50.000,00 Pagaste en TIENDA XYZ con tu cuenta de ahorros.', receivedAt: t0 });
+    expect(out).toBe('imported');
+    expect((await listAccounts())[0]!.balance).toBe(450_000);
+  });
+
+  it('el aviso "Tienes un pago por..." no se registra ni llega a Borradores', async () => {
+    await conPlan();
+    const out = await ingestNotification({ packageName: 'com.nu.production', title: 'Tienes un pago por $123.083,30 de P.A. ADDI', text: 'Completa tu pago de forma fácil y segura en tu app Nu.', receivedAt: t0 });
+    expect(out).toBe('discarded_unparsed');
+    const db = holder.db as any;
+    expect(await db.getAllAsync("SELECT id FROM notifications_log WHERE outcome='discarded_unparsed'")).toHaveLength(0);
+    expect((await listAccounts())[0]!.balance).toBe(500_000);
+  });
+});
+
+describe('asignar un gasto a una deuda', () => {
+  it('lo convierte en pago: baja la deuda, no vuelve a tocar la cuenta y deja de ser gasto del mes', async () => {
+    await addAccount({ name: 'Nu', kind: 'savings', balance: 500_000, currency: 'COP' });
+    const accountId = (await listAccounts())[0]!.id;
+    const debtId = await createDebt({ name: 'Cetina', kind: 'informal', balance: 300_000, monthlyPayment: 0, annualRatePct: 0, dueDay: null });
+    const tx = await createTransaction({ type: 'expense', amount: 50_000, merchant: 'Tienda', categoryId: 'cat_otros', accountId, paymentMethod: 'debit' });
+    expect((await listAccounts())[0]!.balance).toBe(450_000);
+    expect((await monthTotals(monthKey())).expense).toBe(50_000);
+    await assignExpenseToDebt(tx, debtId);
+    expect((await getDebt(debtId))!.balance).toBe(250_000);
+    expect((await listAccounts())[0]!.balance).toBe(450_000);
+    const m = await monthTotals(monthKey());
+    expect(m.expense).toBe(0);
+    expect(m.debtPayments).toBe(50_000);
+    await expect(assignExpenseToDebt(tx, debtId)).rejects.toThrow();
+  });
+
+  it('en un plan con cuotas marca la próxima cuota si el valor coincide, y rechaza si no', async () => {
+    await addAccount({ name: 'Nu', kind: 'savings', balance: 500_000, currency: 'COP' });
+    const r = await createInstallmentPurchase(
+      { type: 'expense', amount: 300_000, merchant: 'Falabella', categoryId: 'cat_compras', paymentMethod: 'bnpl' },
+      { name: 'Falabella', provider: null, parentDebtId: null, installments: 3, mode: { kind: 'zero', feePerInstallment: 0 }, firstDueDate: FIRST_DUE },
+    );
+    const insts = await getInstallments(r.planId);
+    const bad = await createTransaction({ type: 'expense', amount: 5_000, merchant: 'X', categoryId: 'cat_otros', paymentMethod: 'cash' });
+    await expect(assignExpenseToDebt(bad, r.planId)).rejects.toThrow();
+    const ok = await createTransaction({ type: 'expense', amount: insts[0]!.total, merchant: 'Pago cuota', categoryId: 'cat_otros', paymentMethod: 'cash' });
+    await assignExpenseToDebt(ok, r.planId);
+    expect((await getInstallments(r.planId))[0]!.paid_at).not.toBeNull();
+    expect((await getDebt(r.planId))!.balance).toBe(300_000 - insts[0]!.principal);
   });
 });

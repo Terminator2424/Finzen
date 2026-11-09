@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { processNotification } from './pipeline';
 import { TEST_SOURCES } from './testSources';
+import type { NotificationSource } from './sources';
 
 const T = 1_760_000_000_000;
 const run = (packageName: string, title: string, text: string) =>
@@ -52,5 +53,62 @@ describe('Nequi: envíos de personas (nov 2026)', () => {
     expect(r.outcome).toBe('imported');
     if (r.outcome !== 'imported') return;
     expect(r.parsed).toMatchObject({ type: 'income', amount: 1 });
+  });
+});
+
+describe('BBVA, DaviPlata y avisos de Nu (nov 2026)', () => {
+  const BANK: NotificationSource[] = [{ id: 'bank', label: 'Banco', kind: 'bank', packagePattern: '^com\\.test\\.bank$' }];
+  const bank = (title: string, text: string) => processNotification({ packageName: 'com.test.bank', title, text, receivedAt: T }, BANK);
+
+  it('BBVA: recibir por Bre-B es un ingreso', () => {
+    const r = bank('Recibiste dinero en tu cuenta a través de Bre-B', '2026/11/08 18:26 KAROL NICOL ARENAS PENA te envío 1,00 a tu llave y el dinero ya está disponible en tu Cuenta BBVA. Si no reconoces la operación, comunícate al 01 8000 912 227.');
+    expect(r.outcome).toBe('imported');
+    if (r.outcome !== 'imported') return;
+    expect(r.parsed).toMatchObject({ type: 'income', amount: 1 });
+  });
+
+  it('BBVA: enviar con llave es un gasto', () => {
+    const r = bank('Tu envío con llave fue exitoso', '2026/11/08 18:33 KAROL ARENAS recibió el valor de $ 2.200,00 que enviaste a su llave *****5417 registrada en Nequi. Si no reconoces la operación, comunícate al 01 8000 912 227.');
+    expect(r.outcome).toBe('imported');
+    if (r.outcome !== 'imported') return;
+    expect(r.parsed).toMatchObject({ type: 'expense', amount: 2200 });
+  });
+
+  it('BBVA: un pago rechazado no es un movimiento', () => {
+    const r = bank('Pago rechazado', 'Hola, tu pago en Microsoft fue rechazado. Revisa tu saldo en la App BBVA o usa otro medio de pago. Tarjeta usada: *7095. Valor: $24,500.00. El 2026-10-23 a las 00:09.');
+    expect(r.outcome).toBe('discarded_unparsed');
+  });
+
+  it('DaviPlata: "Pasaste $1 a ..." por Llaves es un gasto, no un ingreso', () => {
+    const r = bank('DaviPlata', 'Transaccion exitosa: Pasaste $1 a Karol Arenas usando Llaves. Conoce mas desde los movimientos de tu DaviPlata.');
+    expect(r.outcome).toBe('imported');
+    if (r.outcome !== 'imported') return;
+    expect(r.parsed).toMatchObject({ type: 'expense', amount: 1 });
+  });
+
+  it('DaviPlata: el aviso de recibir no trae monto y no se puede leer', () => {
+    const r = bank('DaviPlata', 'Transaccion exitosa: Recibiste Plata de otra entidad usando Llaves, consulta el detalle de tus movimientos desde el app DaviPlata.');
+    expect(r.outcome).toBe('discarded_unparsed');
+  });
+
+  it('Nu: "Tienes un pago por ... Completa tu pago" no es un movimiento', () => {
+    const r = run('com.nu.production', 'Tienes un pago por $123.083,30 de P.A. ADDI', 'Completa tu pago de forma fácil y segura en tu app Nu.');
+    expect(r.outcome).toBe('discarded_unparsed');
+  });
+
+  it('Nu: "Pago aprobado" por PSE es un gasto de 123.083', () => {
+    const r = run('com.nu.production', 'Nu', 'Pago aprobado por $123.083,30 Pagaste en P.A. ADDI con tu cuenta de ahorros. Si tienes dudas contáctanos via chat.');
+    expect(r.outcome).toBe('imported');
+    if (r.outcome !== 'imported') return;
+    expect(r.parsed).toMatchObject({ type: 'expense', amount: 123_083 });
+  });
+
+  it('Nu: enviar a Nequi y recibir por llave', () => {
+    const a = run('com.nu.production', 'Enviaste $600,00', 'Le enviaste a DAN**** GON******* en su cuenta de Nequi S.A. CF.');
+    expect(a.outcome).toBe('imported');
+    if (a.outcome === 'imported') expect(a.parsed).toMatchObject({ type: 'expense', amount: 600 });
+    const b = run('com.nu.production', 'Recibiste 100.000,00 en tu cuenta', 'Te llegó dinero de PRACTISISTEMAS SAS con tu llave.');
+    expect(b.outcome).toBe('imported');
+    if (b.outcome === 'imported') expect(b.parsed).toMatchObject({ type: 'income', amount: 100_000 });
   });
 });

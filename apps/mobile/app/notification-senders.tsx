@@ -6,16 +6,13 @@ import { AppText, Button, Card, Chip, Field, ScreenHeader } from '../src/compone
 import { CONFIRM_KEY, confirmationsOn } from '../src/services/autoNotify';
 import { setSenderRules } from '../src/services/listenerHealth';
 import { setSetting } from '../src/services/repo';
-import { getSenderRules, normalizeSender, resetSenderRules, saveSenderRules } from '../src/services/senderRules';
+import { forNative, getSenderRules, normalizeSender, resetSenderRules, saveSenderRules } from '../src/services/senderRules';
 import { useTheme } from '../src/theme/ThemeProvider';
 
 const LABEL: Record<string, string> = {
-  'com.whatsapp': 'WhatsApp',
-  'com.whatsapp.w4b': 'WhatsApp Business',
   'com.google.android.apps.messages': 'Mensajes de Google (SMS)',
   'com.samsung.android.messaging': 'Mensajes de Samsung (SMS)',
 };
-const isChat = (pkg: string) => pkg.startsWith('com.whatsapp');
 
 export default function NotificationSenders() {
   const { colors } = useTheme();
@@ -33,16 +30,11 @@ export default function NotificationSenders() {
 
   const persist = async (next: Record<string, string[]>) => {
     await saveSenderRules(next);
-    setSenderRules(next); // se envía de una vez al servicio nativo
+    setSenderRules(forNative(next)); // se envía de una vez al servicio nativo
     setRules(next);
   };
 
-  const commit = async (pkg: string, s: string) => {
-    await persist({ ...rules, [pkg]: [...(rules[pkg] ?? []), s] });
-    setInputs((p) => ({ ...p, [pkg]: '' }));
-  };
-
-  const add = (pkg: string) => {
+  const add = async (pkg: string) => {
     const s = normalizeSender(inputs[pkg] ?? '');
     if (!s) {
       Alert.alert('Remitente no válido', 'Escribe una sola palabra de 3 a 20 letras o números, como sale al inicio del título del aviso (por ejemplo: tigo).');
@@ -51,14 +43,10 @@ export default function NotificationSenders() {
     const cur = rules[pkg] ?? [];
     if (cur.includes(s)) { Alert.alert('Ya está en la lista', `"${s}" ya estaba permitido.`); return; }
     if (cur.length >= 10) { Alert.alert('Demasiados remitentes', 'El máximo es 10 por app.'); return; }
-    if (isChat(pkg)) {
-      Alert.alert('Ojo con los chats', `Esto permite leer los chats individuales de "${s}" en WhatsApp. Agrega solo empresas (bancos, billeteras), nunca personas.`, [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Agregar', onPress: () => { commit(pkg, s).catch(fail); } },
-      ]);
-    } else {
-      commit(pkg, s).catch(fail);
-    }
+    try {
+      await persist({ ...rules, [pkg]: [...cur, s] });
+      setInputs((p) => ({ ...p, [pkg]: '' }));
+    } catch (e) { fail(e); }
   };
 
   const remove = (pkg: string, s: string) => Alert.alert('Quitar remitente', `FinZen dejará de leer los avisos de "${s}" en ${LABEL[pkg] ?? pkg}.`, [
@@ -69,11 +57,11 @@ export default function NotificationSenders() {
     },
   ]);
 
-  const reset = () => Alert.alert('Restablecer', 'Se vuelve a la lista original de remitentes (Addi, Sistecrédito y Tigo).', [
+  const reset = () => Alert.alert('Restablecer', 'Se vuelve a la lista original de remitentes (Tigo).', [
     { text: 'Cancelar', style: 'cancel' },
     {
       text: 'Restablecer',
-      onPress: async () => { try { await resetSenderRules(); const r = await getSenderRules(); setSenderRules(r); setRules(r); } catch (e) { fail(e); } },
+      onPress: async () => { try { await resetSenderRules(); const r = await getSenderRules(); setSenderRules(forNative(r)); setRules(r); } catch (e) { fail(e); } },
     },
   ]);
 
@@ -101,7 +89,7 @@ export default function NotificationSenders() {
         </Card>
 
         <AppText color={colors.textSecondary}>
-          En WhatsApp y en los SMS llegan mensajes de muchas personas. FinZen solo lee los de estos remitentes y descarta todo lo demás sin leerlo.
+          En los SMS llegan mensajes de muchos remitentes. FinZen solo lee los de esta lista y descarta todo lo demás sin leerlo.
           Un remitente es la primera palabra del título del aviso.
         </AppText>
 

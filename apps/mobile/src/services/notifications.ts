@@ -2,6 +2,7 @@ import { processNotification, type NotificationSource, type RawNotification } fr
 import { getDb } from './db';
 import { adjustAccount, getSetting, patchRow, uid, writeRow } from './repo';
 import { SMS_PACKAGES } from './senderRules';
+import { payInstallmentFromNotification } from './installmentPayments';
 import { payInstallment } from './debts';
 import { findAccountForApp, findCardsForApp, registerDebtPayment, suggestCategory, tryPairTransfer } from './transactions';
 
@@ -17,11 +18,13 @@ type LoggedOutcome = Exclude<IngestOutcome, 'bill_saved'>;
 async function loadSources(): Promise<NotificationSource[]> {
   const db = await getDb();
   const rows = await db.getAllAsync<{ id: string; label: string; kind: 'bank' | 'wallet' | 'bnpl'; package_pattern: string }>(
-    'SELECT id,label,kind,package_pattern FROM notification_sources WHERE enabled=1',
+    "SELECT id,label,kind,package_pattern FROM notification_sources WHERE enabled=1 AND lower(package_pattern) NOT LIKE '%whatsapp%'",
   );
   return rows.map((r) => ({ id: r.id, label: r.label, kind: r.kind, packagePattern: r.package_pattern }));
 }
 
+/** Avisos que no son un movimiento (pago por hacer, pago rechazado): se ignoran sin llenar Borradores. Igual que NOT_A_MOVEMENT_RE de parse.ts. */
+const NOT_A_MOVEMENT = /tienes\s+un\s+pago\s+(?:pendiente\s+)?por|completa\s+tu\s+pago|rechazad|declinad|no\s+(?:fue|pudo)\s+(?:aprobad|procesad)|transacci[oó]n\s+fallida/i;
 const LOG_DAYS = 7;
 const LOG_MAX_ROWS = 500;
 
@@ -51,6 +54,8 @@ async function checkBinding(db: Awaited<ReturnType<typeof getDb>>, sourceId: str
 }
 
 export async function ingestNotification(raw: RawNotification): Promise<IngestOutcome> {
+  // WhatsApp ya no se lee: nunca funcionó de forma confiable y exponía chats personales.
+  if (/^com\.whatsapp/i.test(raw.packageName)) return 'discarded_not_whitelisted';
   const db = await getDb();
   const sources = await loadSources();
   const result = processNotification(raw, sources);
@@ -69,7 +74,7 @@ export async function ingestNotification(raw: RawNotification): Promise<IngestOu
   if (result.outcome === 'discarded_otp') { await log('discarded_otp', null, null, null); return 'discarded_otp'; }
   if (result.outcome === 'discarded_unparsed') {
     // SMS: casi todo lo que no se entiende es publicidad; no llenamos Borradores con eso.
-    if (SMS_PACKAGES.has(raw.packageName)) return 'discarded_unparsed';
+    if (SMS_PACKAGES.has(raw.packageName) || NOT_A_MOVEMENT.test(`${raw.title ?? ''} ${raw.text}`)) return 'discarded_unparsed';
     await log('discarded_unparsed', result.maskedText, null, null);
     return 'discarded_unparsed';
   }
@@ -82,7 +87,7 @@ export async function ingestNotification(raw: RawNotification): Promise<IngestOu
 
   // Aviso de factura por pagar (p. ej. SMS de Tigo): no es un gasto, se guarda como pago recurrente.
   if (result.outcome === 'bill') {
-    // Solo facturas de remitentes conocidos (SMS/WhatsApp); otras (p. ej. un extracto) van a Borradores.
+    // Solo facturas de remitentes conocidos (SMS); otras (p. ej. un extracto) van a Borradores.
     if (!raw.senderKey) {
       await log('discarded_unparsed', result.maskedText, null, null);
       return 'discarded_unparsed';
@@ -134,27 +139,9 @@ export async function ingestNotification(raw: RawNotification): Promise<IngestOu
     return 'discarded_unparsed';
   }
 
-  if (p.isDebtPayment && !p.isCardPayment) {
-    // Pago de una cuota (Addi, Sistecrédito…): se busca una cuota pendiente con ESE valor.
-    const seenPay = await db.getFirstAsync<{ id: string }>('SELECT id FROM notifications_log WHERE text_hash=?', [result.dedupeHash]);
-    if (seenPay) { await log('duplicate', result.maskedText, result.dedupeHash, null); return 'duplicate'; }
-    const cand = await db.getAllAsync<{ id: string; debt_id: string }>(
-      `SELECT i.id, i.debt_id FROM debt_installments i JOIN debts d ON d.id=i.debt_id
-        WHERE i.paid_at IS NULL AND i.deleted_at IS NULL AND d.deleted_at IS NULL AND d.status='active' AND i.total=?
-        ORDER BY i.due_date, i.number`,
-      [p.amount],
-    );
-    if (cand.length >= 1) {
-      // Todas son de la misma deuda: se paga la más próxima. De deudas distintas: no se adivina.
-      if (new Set(cand.map((c) => c.debt_id)).size === 1) {
-        await payInstallment(cand[0]!.id, await findAccountForApp(raw.packageName));
-        await log('imported', result.maskedText, result.dedupeHash, null);
-        return 'imported';
-      }
-      await log('discarded_unparsed', result.maskedText, result.dedupeHash, null);
-      return 'discarded_unparsed';
-    }
-  }
+  // Pago de una cuota (aviso del banco por PSE o "Pagaste tu cuota"): marca la cuota y no registra un gasto suelto.
+  const paidInstallment = await payInstallmentFromNotification(db, raw, result.maskedText, result.dedupeHash, p, log);
+  if (paidInstallment) return paidInstallment;
 
   const source = sources.find((s) => s.id === result.sourceId);
   const now = Date.now();
@@ -201,7 +188,7 @@ export const SIMULATED_NOTIFICATIONS: { label: string; packageName: string; text
   { label: 'Addi · compra', packageName: 'com.addi.app', text: 'Compraste $300.000 en Falabella con Addi' },
   { label: 'Nequi · gasto', packageName: 'com.nequi.MobileApp', text: 'Pagaste $18.500 en Tienda D1 con tu cuenta. Saldo $420.000' },
   { label: 'Nequi · OTP (debe descartarse)', packageName: 'com.nequi.MobileApp', text: 'Tu código de verificación es 482913. No lo compartas.' },
-  { label: 'WhatsApp (debe ignorarse)', packageName: 'com.whatsapp', text: 'Hola, ¿cómo estás? $50.000' },
+  { label: 'Nu - pago aprobado por PSE (Addi)', packageName: 'com.nu.production', text: 'Pago aprobado por $123.083,30 Pagaste en P.A. ADDI con tu cuenta de ahorros.' },
 ];
 
 // ───────────── Bandeja de notificaciones no interpretadas ─────────────

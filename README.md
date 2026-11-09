@@ -29,7 +29,7 @@ Versión actual: 1.0.0. Licencia MIT.
 *   Lee las notificaciones de las apps de pago que tú elijas y registra el movimiento sin intervención. Ver [Lectura de notificaciones](#lectura-de-notificaciones).
 *   Bandeja de **Borradores**: si un aviso no coincide con ningún formato conocido, no se pierde; queda para revisión manual.
 *   **Deshacer**: cuando FinZen registra algo solo, avisa con una notificación con botón Deshacer. Además, Inicio muestra durante 12 horas lo registrado automáticamente, también con Deshacer. Deshacer devuelve el saldo y el mismo aviso no se vuelve a importar.
-*   **Remitentes y avisos**: pantalla para editar los remitentes permitidos de WhatsApp y de los SMS, y para activar o apagar las confirmaciones.
+*   **Remitentes y avisos**: pantalla para editar los remitentes permitidos de los SMS, y para activar o apagar las confirmaciones.
 
 ### Cuentas, movimientos y reportes
 
@@ -47,12 +47,14 @@ Versión actual: 1.0.0. Licencia MIT.
 *   Tarjetas de crédito con cupo, día de corte y de pago, y utilización del cupo.
 *   Compras a cuotas (Addi, Sistecrédito, créditos y compras diferidas con tarjeta) con tabla de amortización calculada de forma determinista (método francés) y cargos fijos por cuota.
 *   Simulador de abono extra y método avalancha para decidir a qué deuda abonar primero.
+*   Recordatorios de pago: un día antes y el mismo día para las deudas con día de pago (tarjetas y cuotas ya tienen sus propios avisos).
 *   **Ajustar deudas**: desde Deudas, cada tarjeta tiene un enlace Ajustar.
     *   Me prestaron más (en tarjetas, Gasté más): suma al saldo.
     *   Pagué: baja el saldo y queda como pago de deuda, en efectivo o en persona (no toca cuentas) o desde una cuenta (se descuenta de ella). Si el saldo llega a cero, la deuda se cierra.
     *   Corregir a la baja: baja el saldo sin mover dinero.
     *   En las tarjetas también se puede cambiar el cupo.
     *   Cada ajuste queda en un historial.
+    *   Si te descontaron dinero en un gasto que en realidad era el pago de una deuda, en Ajustar aparece la lista de tus gastos recientes: al tocar uno se convierte en pago, baja la deuda, deja de contarse como gasto del mes y la cuenta no se vuelve a mover.
 *   Los planes con calendario de cuotas no admiten cambiar el saldo suelto, porque se descuadrarían de la tabla de cuotas: ahí se marca la cuota como pagada.
 
 ### Me deben (cuentas por cobrar)
@@ -127,30 +129,27 @@ La app trae la misma guía en **Lectura de notificaciones > Guía paso a paso**,
 |---|---|---|
 | Nu (`com.nu.production`) | Verificada | Gasto ("Enviaste $X") y pago de tarjeta de crédito, con textos reales. Aviso al recibir dinero: sin verificar. |
 | Nequi (`com.nequi.MobileApp`) | Verificada | Ingresos por Bre-B ("Te enviaron $X") y envíos de personas ("Nombre te envió X"), con textos reales. Avisos al enviar dinero: sin verificar. |
-| Addi y Sistecrédito (por WhatsApp) | Verificadas | Compras y pago de cuotas. Ver la nota de WhatsApp. |
+| Addi (pagos por PSE) | Verificado | El aviso del banco ("Pago aprobado ... P.A. ADDI") marca la cuota de Addi como pagada. FinZen no lee WhatsApp. |
 | Tigo (SMS, por Google Messages o Samsung Messages) | Experimental | Avisos de factura. Formato verificado con un SMS real; falta la prueba en vivo. |
+| BBVA Colombia | Experimental | Recibir y enviar por Bre-B (llave) con textos reales; los pagos rechazados se ignoran. Hay que agregar la app con el Modo Aprendizaje. |
+| DaviPlata | Experimental | Envíos por Llaves ("Pasaste $X a ..."). El aviso al recibir no trae el monto y queda en Borradores. |
 | Otros bancos y billeteras | Experimental | Se agregan con el Modo Aprendizaje. Si el formato no se reconoce, el aviso va a Borradores. Ver [Contribuir](#contribuir). |
-
-### WhatsApp
-
-Addi y Sistecrédito avisan sus compras y cuotas por WhatsApp. Si agregas `com.whatsapp`, FinZen solo procesa **chats individuales cuyo remitente sea Addi o Sistecrédito**; los grupos y cualquier otro chat se descartan sin leerse. Como el nombre de un contacto lo puede escribir cualquiera, existe la opción **Verificar remitente**, que fija el remitente al primer chat válido y bloquea suplantaciones.
 
 ### SMS de facturas (experimental)
 
 Si agregas tu app de mensajes (`com.google.android.apps.messages` o `com.samsung.android.messaging`), FinZen solo lee los SMS de los remitentes permitidos (por defecto, Tigo) y descarta todo lo demás sin leerlo. Un aviso como "Ya generamos tu factura de OCTUBRE ... por $19.900, límite de pago 21/11/2026" no es un gasto: se guarda como pago recurrente con su día de vencimiento y un recordatorio un día antes. La publicidad se ignora.
 
-### Remitentes permitidos
+### Remitentes permitidos (SMS)
 
-En Lectura de notificaciones > Remitentes y avisos se pueden editar los remitentes permitidos de WhatsApp y de los SMS. Un remitente es una sola palabra: la primera del título del aviso. Los paquetes de mensajes nunca quedan sin regla: si quitas todos los remitentes, no se lee nada de esa app. Agregar un remitente en WhatsApp pide confirmación, porque permite leer los chats individuales de ese remitente; agrega solo empresas, nunca personas.
+En Lectura de notificaciones > Remitentes y avisos se pueden editar los remitentes permitidos de los SMS (por defecto, Tigo). Un remitente es una sola palabra: la primera del título del aviso. Los paquetes de mensajes nunca quedan sin regla: si quitas todos los remitentes, no se lee nada de esa app.
 
 ### Pagos de tarjeta de crédito
 
 Cuando llega un aviso como "Pagaste tu tarjeta de crédito Nu", FinZen lo registra como **abono a la tarjeta**: baja su saldo, descuenta el dinero de la cuenta de esa app (por ejemplo, la cuenta "Nu") y queda en la categoría Deudas, no como un gasto más. La tarjeta y la cuenta se enlazan por el nombre de la app: una tarjeta (o proveedor) llamada "Nu" y una cuenta llamada "Nu" se asocian solas con la app Nu. Si no hay una única tarjeta que calce, el aviso va a **Borradores**: al tocar "Procesar" se abre el formulario **Abono a deuda** con el monto ya puesto y solo eliges la deuda y la cuenta.
 
-### Cuotas de Addi y Sistecrédito
+### Pagos por PSE y avisos que no son movimientos
 
-Un aviso como "Pagaste tu cuota de $53.558" marca la cuota como pagada y baja el saldo del plan. La cuota se busca por su valor: si hay una única deuda con una cuota pendiente de ese monto, se paga sola; si hay varias deudas posibles, el aviso va a Borradores y no se adivina.
-
+Cuando pagas una cuota por PSE (por ejemplo, Addi desde Nu), el banco manda dos avisos: "Tienes un pago por $X de P.A. ADDI" (el pago está por hacer) y, más tarde, "Pago aprobado por $X". FinZen ignora el primero, porque todavía no es un movimiento, y con el segundo marca la cuota de Addi como pagada en lugar de registrar un gasto suelto: baja la deuda y descuenta de la cuenta del banco. La cuota se busca por su valor (con un peso de margen) entre las deudas cuyo proveedor aparece en el aviso. Si el mismo pago llega por otro aviso, no se cuenta dos veces. Los avisos de pagos rechazados también se ignoran, porque no mueven dinero.
 ### Transferencias entre tus propias cuentas
 
 Si mueves dinero entre dos cuentas tuyas (por ejemplo, de Nu a Nequi), cada app avisa por separado: Nu un gasto y Nequi un ingreso. FinZen empareja las dos notificaciones cuando tienen el mismo monto, son de cuentas distintas y llegan con menos de 10 minutos de diferencia, y las guarda como una **transferencia**: los saldos cambian, pero no cuenta como ingreso ni como gasto del mes. Si hay más de una pareja posible, no adivina. También puedes registrar una transferencia a mano en Ajustes > Transferir entre mis cuentas, y al borrar una mitad se borran las dos.
@@ -163,10 +162,10 @@ Si mueves dinero entre dos cuentas tuyas (por ejemplo, de Nu a Nequi), cada app 
 *   **El aviso debe traer el monto.** Si una notificación no lo incluye (algunos bancos solo avisan "tienes un movimiento"), no hay nada que interpretar. El motor trabaja en pesos enteros y descarta montos menores a un peso.
 *   **La importación necesita la app en ejecución.** El servicio nativo captura los avisos aunque la app esté cerrada y los guarda cifrados, pero convertirlos en movimientos y actualizar saldos lo hace la parte de JavaScript. Si el sistema cierra la app, los avisos esperan en la cola hasta que se abra. En algunas marcas hay que quitar la restricción de batería para que el lector no se congele.
 *   **Formatos verificados limitados.** Los avisos de Nequi al enviar dinero y de Nu al recibirlo todavía no están verificados con textos reales. Cualquier otra app es experimental.
-*   **SMS y WhatsApp solo de remitentes permitidos,** y cada remitente es una sola palabra.
+*   **SMS solo de remitentes permitidos,** y cada remitente es una sola palabra. **FinZen no lee WhatsApp:** nunca funcionó de forma confiable y exponía chats personales; los pagos de Addi se registran con el aviso del banco (PSE).
 *   **Movimientos sin cuenta.** Si no existe una cuenta con el nombre de la app (por ejemplo "Nu" o "Nequi"), el movimiento se guarda pero no mueve ningún saldo. Inicio lo avisa. Crear la cuenta después no reasigna los movimientos anteriores.
 *   **Transferencias automáticas.** Requieren el nombre guardado, que ambos avisos vengan de notificaciones y que lleguen con menos de 10 minutos de diferencia. Un familiar con los mismos apellidos y un nombre de pila parecido podría confundirse contigo; la transferencia manual evita ese caso.
-*   **Abonos automáticos.** El abono por notificación solo aplica a tarjetas de crédito. Las cuotas de planes se marcan por valor exacto y solo si hay una única deuda candidata.
+*   **Abonos automáticos.** El abono por notificación solo aplica a tarjetas de crédito. Las cuotas de planes se marcan por su valor (con un peso de margen) y solo si hay una única deuda candidata.
 *   **Planes con calendario de cuotas** no admiten ajustar el saldo suelto; se marca la cuota como pagada.
 *   **Me deben y ajustes de deuda son locales:** no se sincronizan con la nube (sí entran en el respaldo cifrado). Los pagos detectados solo miran ingresos de los últimos 7 días (la bitácora de notificaciones se poda a los 7 días), y borrar el ingreso aceptado no reabre el cobro.
 *   **Las confirmaciones muestran el monto** en la pantalla bloqueada. Se pueden apagar en Remitentes y avisos.
@@ -263,7 +262,6 @@ npm run typecheck --workspaces --if-present
 *   Reasignar a una cuenta recién creada los movimientos que quedaron sin cuenta.
 *   Reabrir un cobro cuando se borra el ingreso que lo descontó.
 *   Ocultar el monto de las confirmaciones en la pantalla bloqueada.
-*   Confirmación manual para movimientos leídos desde WhatsApp.
 *   Sincronización opcional de cobros y ajustes de deuda.
 
 ## Licencia

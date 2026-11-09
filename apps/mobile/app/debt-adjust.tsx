@@ -1,11 +1,12 @@
 import React, { useCallback, useState } from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText, Button, Card, Chip, Field, MoneyField, ScreenHeader } from '../src/components/ui';
 import { DEBT_KIND_LABEL, getDebt, getInstallments, payInstallment, type Debt, type Installment } from '../src/services/debts';
 import {
-  decreaseDebt, increaseDebt, listAdjustments, payDebtCapital, setCreditLimit, type AdjustKind, type DebtAdjustment,
+  assignExpenseToDebt, decreaseDebt, increaseDebt, listAdjustments, listAssignableExpenses, payDebtCapital, setCreditLimit,
+  type AdjustKind, type AssignableExpense, type DebtAdjustment,
 } from '../src/services/debtAdjust';
 import { listAccounts } from '../src/services/repo';
 import { useTheme } from '../src/theme/ThemeProvider';
@@ -22,6 +23,7 @@ export default function DebtAdjust() {
   const [debt, setDebt] = useState<Debt | null>(null);
   const [accounts, setAccounts] = useState<Awaited<ReturnType<typeof listAccounts>>>([]);
   const [history, setHistory] = useState<DebtAdjustment[]>([]);
+  const [recent, setRecent] = useState<AssignableExpense[]>([]);
   const [next, setNext] = useState<Installment | null>(null);
   const [mode, setMode] = useState<AdjustKind>('increase');
   const [amount, setAmount] = useState('');
@@ -38,12 +40,20 @@ export default function DebtAdjust() {
     if (!d) return;
     setAccounts(await listAccounts());
     setHistory(await listAdjustments(id));
+    setRecent(await listAssignableExpenses());
     setNext(d.installments_total !== null ? ((await getInstallments(id)).find((i) => !i.paid_at) ?? null) : null);
     if (d.kind === 'credit_card') setLimit(d.credit_limit ? dots(d.credit_limit) : '');
   }, [id]);
   useFocusEffect(useCallback(() => { load().catch(() => {}); }, [load]));
 
   const fail = (e: unknown) => Alert.alert('No se pudo', e instanceof Error ? e.message : String(e));
+  const assign = (t: AssignableExpense) => {
+    if (!debt) return;
+    Alert.alert('Convertir en pago', `¿"${t.merchant ?? 'Sin descripción'}" por ${formatCOP(t.amount)} fue un pago de ${debt.name}? Baja la deuda y deja de contarse como gasto. Tu cuenta no vuelve a moverse.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Sí, fue pago', onPress: async () => { try { await assignExpenseToDebt(t.id, debt.id); setMsg('✓ Gasto convertido en pago.'); await load(); } catch (e) { fail(e); } } },
+    ]);
+  };
   const value = parseDigits(amount);
   const isCard = debt?.kind === 'credit_card';
   const scheduled = !!debt && debt.installments_total !== null;
@@ -139,6 +149,24 @@ export default function DebtAdjust() {
                   <Field label="Nota (opcional)" value={note} onChangeText={setNote} placeholder="Ej.: me prestó para el arriendo" />
                 )}
                 <Button label="Aplicar" onPress={apply} disabled={busy || value <= 0} />
+              </Card>
+            )}
+
+            {recent.length > 0 && (
+              <Card>
+                <AppText variant="subtitle">¿Ya lo pagaste con un gasto?</AppText>
+                <AppText variant="caption" color={colors.textSecondary}>
+                  Si te descontaron plata de algo que en realidad era un pago de esta deuda, tócalo: baja la deuda y deja de contarse como gasto del mes.
+                </AppText>
+                {recent.map((t) => (
+                  <Pressable key={t.id} onPress={() => assign(t)} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10, paddingVertical: 6 }}>
+                    <View style={{ flex: 1 }}>
+                      <AppText variant="caption">{t.merchant ?? 'Sin descripción'}</AppText>
+                      <AppText variant="caption" color={colors.textSecondary}>{date(t.occurred_at)}{t.account ? ` · ${t.account}` : ''}</AppText>
+                    </View>
+                    <AppText variant="caption" color={colors.danger}>{formatCOP(t.amount)}</AppText>
+                  </Pressable>
+                ))}
               </Card>
             )}
 

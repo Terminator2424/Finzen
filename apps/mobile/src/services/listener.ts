@@ -1,8 +1,8 @@
 import { AppState } from 'react-native';
 import { NotificationListener } from '../../modules/finzen-notifications';
 import { getDb } from './db';
-import { ensureListenerAlive, setSenderRules } from './listenerHealth';
-import { getSenderRules } from './senderRules';
+import { ensureListenerAlive, setSenderBinding, setSenderRules } from './listenerHealth';
+import { forNative, getSenderRules } from './senderRules';
 import { ingestNotification } from './notifications';
 import { notifyNow, rescheduleReminders } from './reminders';
 import { listPending } from './transactions';
@@ -30,7 +30,7 @@ let lastSig = '';
 export async function syncWhitelist(): Promise<void> {
   const db = await getDb();
   const rows = await db.getAllAsync<{ package_pattern: string }>(
-    'SELECT package_pattern FROM notification_sources WHERE enabled=1',
+    "SELECT package_pattern FROM notification_sources WHERE enabled=1 AND lower(package_pattern) NOT LIKE '%whatsapp%'",
   );
   NotificationListener.setWhitelist(rows.map((r) => r.package_pattern));
   const sig = rows.map((r) => r.package_pattern).sort().join('|');
@@ -111,7 +111,8 @@ export function startListenerBridge(onImported?: () => void): () => void {
   };
   const boot = () => {
     ensureListenerAlive().catch(() => {});
-    getSenderRules().then(setSenderRules).catch(() => {});
+    getSenderRules().then((r) => setSenderRules(forNative(r))).catch(() => {});
+    setSenderBinding(false); // el anclaje de remitente era solo para WhatsApp
     syncWhitelist().then(run).catch((e) => logIngest(`sync lista blanca ERROR: ${e instanceof Error ? e.message : String(e)}`));
   };
   boot();

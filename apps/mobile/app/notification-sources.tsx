@@ -7,8 +7,8 @@ import { AppText, Button, Card, Field, ScreenHeader } from '../src/components/ui
 import { getDb } from '../src/services/db';
 import { syncWhitelist } from '../src/services/listener';
 import {
-  ensureListenerAlive, forceRebind, getHealth, openBatteryExemption, resetSenderBindings,
-  setPersistentMode, setSenderBinding, type HealthSnapshot,
+  ensureListenerAlive, forceRebind, getHealth, openBatteryExemption,
+  setPersistentMode, type HealthSnapshot,
 } from '../src/services/listenerHealth';
 import { getSetting, setSetting, uid } from '../src/services/repo';
 import { loadLockPrefs } from '../src/services/security';
@@ -18,7 +18,6 @@ import { useTheme } from '../src/theme/ThemeProvider';
 
 interface Source { id: string; label: string; kind: string; enabled: number; package_pattern: string; bound_package: string | null; user_added: number }
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const isWhatsApp = (pkg: string) => /^com\.whatsapp(\.w4b)?$/.test(pkg);
 
 export default function NotificationSources() {
   const { colors } = useTheme();
@@ -79,17 +78,18 @@ export default function NotificationSources() {
   const covered = (pkg: string) => sources.some((s) => { try { return new RegExp(s.package_pattern).test(pkg.toLowerCase()); } catch { return false; } });
 
   const add = async (pkg: string) => {
+    if (/whatsapp/i.test(pkg)) {
+      Alert.alert('WhatsApp no es compatible', 'FinZen ya no lee WhatsApp. Para los pagos de Addi usa el aviso de tu banco (PSE).');
+      return;
+    }
     const db = await getDb();
     await db.runAsync(
       'INSERT OR IGNORE INTO notification_sources (id,label,kind,package_pattern,enabled,user_added,bound_package) VALUES (?,?,?,?,1,1,?)',
       [`user_${uid()}`, pkg, 'bank', `^${esc(pkg.toLowerCase())}$`, pkg],
     );
     await syncWhitelist(); load();
-    if (SENDER_RULES[pkg] && !isWhatsApp(pkg)) {
+    if (SENDER_RULES[pkg]) {
       Alert.alert('Lectura limitada', `Solo se leerán mensajes de: ${SENDER_RULES[pkg]!.join(', ')}. Todo lo demás se descarta sin leerse.`);
-    }
-    if (isWhatsApp(pkg)) {
-      Alert.alert('WhatsApp', 'Solo se leerán chats individuales de Addi y Sistecrédito. Cualquier otro chat o grupo se descarta sin leerse.');
     }
   };
 
@@ -167,13 +167,6 @@ export default function NotificationSources() {
               <AppText>Modo persistente (aviso fijo)</AppText>
               <Switch value={h.persistent} onValueChange={(v) => { setPersistentMode(v); setTimeout(load, 500); }} />
             </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-              <AppText>Verificar remitente (WhatsApp)</AppText>
-              <Switch value={h.senderBinding} onValueChange={(v) => { setSenderBinding(v); setTimeout(load, 300); }} />
-            </View>
-            {h.senderBinding && (
-              <Button variant="ghost" label="Restablecer remitentes verificados" onPress={() => { resetSenderBindings(); load(); }} />
-            )}
           </Card>
         )}
 
@@ -197,7 +190,7 @@ export default function NotificationSources() {
             <Switch value={learning} onValueChange={(v) => { setLearning(v); NotificationListener.setLearningMode(v); load(); }} />
           </View>
 
-          {seen.filter((p) => !covered(p.packageName)).slice(0, 25).map((p) => (
+          {seen.filter((p) => !covered(p.packageName) && !/whatsapp/i.test(p.packageName)).slice(0, 25).map((p) => (
             <View key={p.packageName} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 12, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8 }}>
               <View style={{ flex: 1 }}>
                 <AppText variant="caption" style={{ fontWeight: 'bold' }}>{p.packageName}</AppText>

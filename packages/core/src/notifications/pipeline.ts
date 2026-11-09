@@ -10,7 +10,7 @@ export interface RawNotification {
   text: string;
   /** epoch ms */
   receivedAt: number;
-  /** Remitente normalizado (WhatsApp: "addi", "sistecredito"); lo manda el modulo nativo. */
+  /** Remitente normalizado de un SMS (por ejemplo "tigo"); lo manda el modulo nativo. */
   senderKey?: string;
 }
 
@@ -36,8 +36,6 @@ const MAX_TEXT = 300;
 const MAX_INPUT = 2000;
 /** El descarte de OTP revisa MÁS texto que el que se analiza, para que no se pueda esconder una clave tras relleno. */
 const MAX_OTP_SCAN = 20_000;
-/** Remitentes de WhatsApp que son BNPL: sus compras piden cuotas aunque la fuente sea "com.whatsapp". */
-const BNPL_SENDERS = new Set(['addi', 'sistecredito']);
 
 /**
  * Orden de seguridad (no alterar):
@@ -58,7 +56,7 @@ export function processNotification(
   if (isOtp(combined)) return { outcome: 'discarded_otp', sourceId: source.id };
 
   const maskedText = maskSensitive(combined.slice(0, MAX_INPUT)).slice(0, MAX_TEXT);
-  const kind = n.senderKey && BNPL_SENDERS.has(n.senderKey) ? 'bnpl' : source.kind;
+  const kind = source.kind;
   const bill = parseBillNotice(maskedText);
   if (bill) {
     return {
