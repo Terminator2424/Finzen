@@ -5,7 +5,7 @@
  *    jamás debe poder cambiar ajustes de dispositivo (PIN, IA, URL de Ollama…).
  *  - Las fuentes de notificaciones (notification_sources) se reconstruyen desde cero: solo las
  *    agregadas por el usuario, con patrón exacto "^paquete$", SIEMPRE desactivadas y SIN
- *    vínculo (bound_package). Así un respaldo no puede activar la lectura de SMS/WhatsApp,
+ *    vínculo (bound_package). Así un respaldo no puede activar la lectura de SMS,
  *    meter un regex catastrófico ni preasignar un paquete falso como "verdadero".
  *  - Tamaño y número de filas acotados (evita agotar la memoria).
  *  - Todo valor se escribe con parámetros; los nombres de columna se filtran contra el esquema.

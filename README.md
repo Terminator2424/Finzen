@@ -38,7 +38,7 @@ Versión actual: 1.0.0. Licencia MIT.
 *   Categorización automática por reglas y presupuestos mensuales con alertas.
 *   Edición transaccional: al editar un movimiento pasado se revierte el efecto anterior y se aplica el nuevo sobre el saldo de las cuentas.
 *   **Transferencias entre tus propias cuentas** (por ejemplo, de Nu a Nequi): no cuentan como ingreso ni como gasto del mes. Se emparejan solas a partir de las notificaciones o se registran a mano.
-*   Gastos fijos y suscripciones, con recordatorio un día antes del pago.
+*   Gastos fijos y suscripciones, con recordatorio un día antes y el mismo día del pago.
 *   Inicio con patrimonio neto, evolución mensual, ingresos y gastos del mes, gastos por categoría, presupuestos y próximos pagos.
 *   Aviso en Inicio cuando hay movimientos leídos que no cayeron en ninguna cuenta, para que no pasen desapercibidos.
 
@@ -47,7 +47,7 @@ Versión actual: 1.0.0. Licencia MIT.
 *   Tarjetas de crédito con cupo, día de corte y de pago, y utilización del cupo.
 *   Compras a cuotas (Addi, Sistecrédito, créditos y compras diferidas con tarjeta) con tabla de amortización calculada de forma determinista (método francés) y cargos fijos por cuota.
 *   Simulador de abono extra y método avalancha para decidir a qué deuda abonar primero.
-*   Recordatorios de pago: un día antes y el mismo día para las deudas con día de pago (tarjetas y cuotas ya tienen sus propios avisos).
+*   Recordatorios de pago a las 9:00, un día antes y el mismo día: cuotas, tarjetas, gastos fijos y deudas con día de pago. Se programan al abrir la app, para los dos próximos ciclos de lo que se repite cada mes.
 *   **Ajustar deudas**: desde Deudas, cada tarjeta tiene un enlace Ajustar.
     *   Me prestaron más (en tarjetas, Gasté más): suma al saldo.
     *   Pagué: baja el saldo y queda como pago de deuda, en efectivo o en persona (no toca cuentas) o desde una cuenta (se descuenta de ella). Si el saldo llega a cero, la deuda se cierra.
